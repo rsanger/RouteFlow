@@ -7,6 +7,8 @@
 #include "IPAddress.h"
 #include "MACAddress.h"
 #include "converter.h"
+#include "Action.hh"
+#include "Match.hh"
 
 enum {
 	PORT_REGISTER,
@@ -17,7 +19,8 @@ enum {
 	DATAPATH_PORT_REGISTER,
 	DATAPATH_DOWN,
 	VIRTUAL_PLANE_MAP,
-	DATA_PLANE_MAP
+	DATA_PLANE_MAP,
+	ROUTE_MOD
 };
 
 class PortRegister : public IPCMessage {
@@ -267,6 +270,37 @@ class DataPlaneMap : public IPCMessage {
         uint32_t dp_port;
         uint64_t vs_id;
         uint32_t vs_port;
+};
+
+class RouteMod : public IPCMessage {
+    public:
+        RouteMod();
+        RouteMod(uint8_t mod, uint64_t id, std::vector<Match*> matches, std::vector<Action*> actions);
+
+        uint8_t get_mod();
+        void set_mod(uint8_t mod);
+
+        uint64_t get_id();
+        void set_id(uint64_t id);
+
+        std::vector<Match*> get_matches();
+        void set_matches(std::vector<Match*> matches);
+        void add_match(Match* match);
+
+        std::vector<Action*> get_actions();
+        void set_actions(std::vector<Action*> actions);
+        void add_action(Action* action);
+
+        virtual int get_type();
+        virtual void from_BSON(const char* data);
+        virtual const char* to_BSON();
+        virtual string str();
+
+    private:
+        uint8_t mod;
+        uint64_t id;
+        std::vector<Match*> matches;
+        std::vector<Action*> actions;
 };
 
 #endif /* __RFPROTOCOL_H__ */
