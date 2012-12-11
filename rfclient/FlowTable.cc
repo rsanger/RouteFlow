@@ -13,7 +13,8 @@
 
 using namespace std;
 
-#define FULL_IPV4_MASK "255.255.255.255"
+#define FULL_IPV4_MASK ((in_addr){ 0xffffffff })
+#define FULL_IPV6_MASK ((in6_addr){{{ 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff }}})
 #define EMPTY_MAC_ADDRESS "00:00:00:00:00:00"
 
 struct rtnl_handle FlowTable::rthNeigh;
@@ -288,8 +289,8 @@ void FlowTable::fakeReq(const char *hostAddr, const char *intf) {
 	sin->sin_family = AF_INET;
 	sin->sin_addr.s_addr = inet_addr(hostAddr);
 
-    // Cast to eliminate warning. in_addr.s_addr  is unsigned long.
-	if (sin->sin_addr.s_addr == (unsigned long) -1) {
+    // Cast to eliminate warning. in_addr.s_addr is uint32_t (netinet/in.h:141)
+	if (sin->sin_addr.s_addr == (uint32_t) -1) {
 		if (!(hp = gethostbyname(hostAddr))) {
 			fprintf(stderr, "ARP: %s ", hostAddr);
 			herror((char *) NULL);
@@ -348,17 +349,39 @@ void FlowTable::addFlowToHw(const RouteEntry& rentry) {
 	if (not found)
 		return;
 
-    RouteInfo msg;
-    msg.set_is_removal(false);
-    msg.set_vm_id(FlowTable::vm_id);
-    msg.set_vm_port(rentry.interface.port);
-    // Action
-    msg.set_dst_port(rentry.interface.port);
-    msg.set_src_hwaddress(rentry.interface.hwaddress);
-    msg.set_dst_hwaddress(dstMac);
-    // Rule
-    msg.set_address(rentry.address);
-    msg.set_netmask(rentry.netmask);
+	RouteMod msg;
+	msg.set_mod(RMT_ADD);
+	msg.set_id(FlowTable::vm_id);
+
+	if(rentry.address.getVersion() == IPV6) {
+		ip6_match_t ipmatch;
+		ipmatch.addr = *((in6_addr*) rentry.address.toInAddr());
+		ipmatch.mask = *((in6_addr*) rentry.netmask.toInAddr());
+
+		Match ipdst = Match(RFMT_IPV6, &ipmatch);
+		msg.add_match(&ipdst);
+	} else {
+		ip_match_t ipmatch;
+		ipmatch.addr = *((in_addr*) rentry.address.toInAddr());
+		ipmatch.mask = *((in_addr*) rentry.netmask.toInAddr());
+
+		Match ipdst = Match(RFMT_IPV4, &ipmatch);
+		msg.add_match(&ipdst);
+	}
+
+	Action outport = Action(RFAT_OUTPUT, rentry.interface.port);
+
+	uint8_t srcaddr[IFHWADDRLEN];
+	rentry.interface.hwaddress.toArray(srcaddr);
+	Action setdlsrc = Action(RFAT_SET_ETH_SRC, srcaddr);
+
+	uint8_t dstaddr[IFHWADDRLEN];
+	dstMac.toArray(dstaddr);
+	Action setdldst = Action(RFAT_SET_ETH_DST, dstaddr);
+
+	msg.add_action(&outport);
+	msg.add_action(&setdlsrc);
+	msg.add_action(&setdldst);
 
     // Send
     FlowTable::ipc->send(RFCLIENT_RFSERVER_CHANNEL, RFSERVER_ID, msg);
@@ -368,17 +391,39 @@ void FlowTable::addFlowToHw(const HostEntry& hentry) {
     if (is_port_down(hentry.interface.port))
         return;
 
-    RouteInfo msg;
-    msg.set_is_removal(false);
-    msg.set_vm_id(FlowTable::vm_id);
-    msg.set_vm_port(hentry.interface.port);
-    // Action
-    msg.set_dst_port(hentry.interface.port);
-    msg.set_src_hwaddress(hentry.interface.hwaddress);
-    msg.set_dst_hwaddress(hentry.hwaddress);
-    // Rule
-    msg.set_address(hentry.address);
-    msg.set_netmask(IPAddress(IPV4, FULL_IPV4_MASK));
+	RouteMod msg;
+	msg.set_mod(RMT_ADD);
+	msg.set_id(FlowTable::vm_id);
+
+	if(hentry.address.getVersion() == IPV6) {
+		ip6_match_t ipmatch;
+		ipmatch.addr = *((in6_addr*) hentry.address.toInAddr());
+		ipmatch.mask = FULL_IPV6_MASK;
+
+		Match ipdst = Match(RFMT_IPV6, &ipmatch);
+		msg.add_match(&ipdst);
+	} else {
+		ip_match_t ipmatch;
+		ipmatch.addr = *((in_addr*) hentry.address.toInAddr());
+		ipmatch.mask = FULL_IPV4_MASK;
+
+		Match ipdst = Match(RFMT_IPV4, &ipmatch);
+		msg.add_match(&ipdst);
+	}
+
+	Action outport = Action(RFAT_OUTPUT, hentry.interface.port);
+
+	uint8_t srcaddr[IFHWADDRLEN];
+	hentry.interface.hwaddress.toArray(srcaddr);
+	Action setdlsrc = Action(RFAT_SET_ETH_SRC, srcaddr);
+
+	uint8_t dstaddr[IFHWADDRLEN];
+	hentry.hwaddress.toArray(dstaddr);
+	Action setdldst = Action(RFAT_SET_ETH_DST, dstaddr);
+
+	msg.add_action(&outport);
+	msg.add_action(&setdlsrc);
+	msg.add_action(&setdldst);
 
     // Send
     FlowTable::ipc->send(RFCLIENT_RFSERVER_CHANNEL, RFSERVER_ID, msg);
@@ -390,17 +435,29 @@ void FlowTable::delFlowFromHw(const RouteEntry& rentry) {
     if (is_port_down(rentry.interface.port))
         return;
 
-    RouteInfo msg;
-    msg.set_is_removal(true);
-    msg.set_vm_id(FlowTable::vm_id);
-    msg.set_vm_port(rentry.interface.port);
-    // Action
-    msg.set_dst_port(0);
-    msg.set_src_hwaddress(rentry.interface.hwaddress);
-    msg.set_dst_hwaddress(MACAddress(EMPTY_MAC_ADDRESS));
-    // Rule
-    msg.set_address(rentry.address);
-    msg.set_netmask(rentry.netmask);
+	RouteMod msg;
+	msg.set_mod(RMT_DELETE);
+	msg.set_id(FlowTable::vm_id);
+
+	if(rentry.address.getVersion() == IPV6) {
+		ip6_match_t ipmatch;
+		ipmatch.addr = *((in6_addr*) rentry.address.toInAddr());
+		ipmatch.mask = *((in6_addr*) rentry.netmask.toInAddr());
+
+		Match ipdst = Match(RFMT_IPV6, &ipmatch);
+		msg.add_match(&ipdst);
+	} else {
+		ip_match_t ipmatch;
+		ipmatch.addr = *((in_addr*) rentry.address.toInAddr());
+		ipmatch.mask = *((in_addr*) rentry.netmask.toInAddr());
+
+		Match ipdst = Match(RFMT_IPV4, &ipmatch);
+		msg.add_match(&ipdst);
+	}
+
+	Action outport = Action(RFAT_OUTPUT, rentry.interface.port);
+
+	msg.add_action(&outport);
 
     // Send
     FlowTable::ipc->send(RFCLIENT_RFSERVER_CHANNEL, RFSERVER_ID, msg);
@@ -410,17 +467,29 @@ void FlowTable::delFlowFromHw(const HostEntry& hentry) {
     if (is_port_down(hentry.interface.port))
         return;
 
-    RouteInfo msg;
-    msg.set_is_removal(true);
-    msg.set_vm_id(FlowTable::vm_id);
-    msg.set_vm_port(hentry.interface.port);
-    // Action
-    msg.set_dst_port(hentry.interface.port);
-    msg.set_src_hwaddress(hentry.interface.hwaddress);
-    msg.set_dst_hwaddress(hentry.hwaddress);
-    // Rule
-    msg.set_address(hentry.address);
-    msg.set_netmask(IPAddress(IPV4, FULL_IPV4_MASK));
+	RouteMod msg;
+	msg.set_mod(RMT_DELETE);
+	msg.set_id(FlowTable::vm_id);
+
+	if(hentry.address.getVersion() == IPV6) {
+		ip6_match_t ipmatch;
+		ipmatch.addr = *((in6_addr*) hentry.address.toInAddr());
+		ipmatch.mask = FULL_IPV6_MASK;
+
+		Match ipdst = Match(RFMT_IPV6, &ipmatch);
+		msg.add_match(&ipdst);
+	} else {
+		ip_match_t ipmatch;
+		ipmatch.addr = *((in_addr*) hentry.address.toInAddr());
+		ipmatch.mask = FULL_IPV4_MASK;
+
+		Match ipdst = Match(RFMT_IPV4, &ipmatch);
+		msg.add_match(&ipdst);
+	}
+
+	Action outport = Action(RFAT_OUTPUT, hentry.interface.port);
+
+	msg.add_action(&outport);
 
     // Send
     FlowTable::ipc->send(RFCLIENT_RFSERVER_CHANNEL, RFSERVER_ID, msg);
