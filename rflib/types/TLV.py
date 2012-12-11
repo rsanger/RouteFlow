@@ -16,10 +16,13 @@ class TLV(object):
     def to_dict(self):
         return { 'type' : self._type, 'value' : self._value }
 
-def int_to_bin(num):
+def hex_int_extend(num, length):
+    return ((length/4 - len(num)) * '0') + num
+
+def int_to_bin(num, length):
     hexnum = hex(num)[2:]
     hexnum = hexnum if len(hexnum) % 2 == 0 else '0' + hexnum
-    return a2b_hex(hexnum)
+    return a2b_hex(hex_int_extend(hexnum, length))
 
 def bin_to_int(value):
     return int(b2a_hex(value), 16)
@@ -28,7 +31,6 @@ def ether_to_bin(ethaddr):
     return a2b_hex(ethaddr.replace(':', ''))
 
 def bin_to_ether(value):
-    #TODO Insert ':' characters into the string
     hexval = b2a_hex(value)
     ethers = '%2s:%2s:%2s:%2s:%2s:%2s' % (hexval[:2], hexval[2:4], hexval[4:6], hexval[6:8], hexval[8:10], hexval[10:])
     return ethers

@@ -50,7 +50,7 @@ class Action(TLV):
     @staticmethod
     def type_to_bin(actionType, value):
         if actionType in (RFAT_OUTPUT, RFAT_PUSH_MPLS, RFAT_SWAP_MPLS):
-            return int_to_bin(value)
+            return int_to_bin(value, 32)
         elif actionType in (RFAT_SET_ETH_SRC, RFAT_SET_ETH_DST):
             return ether_to_bin(value)
         elif actionType == RFAT_POP_MPLS:

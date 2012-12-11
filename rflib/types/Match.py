@@ -44,8 +44,8 @@ class Match(TLV):
             return inet_pton(AF_INET6, value[0]) + inet_pton(AF_INET6, value[1])
         elif matchType == RFMT_ETHERNET:
             return ether_to_bin(value)
-        elif matchType == RFMT_MPLS:
-            return int_to_bin(value)
+        elif matchType ==  RFMT_MPLS:
+            return int_to_bin(value, 32)
         else:
             return None
 
