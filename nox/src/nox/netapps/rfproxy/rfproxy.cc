@@ -240,6 +240,17 @@ bool rfproxy::process(const string &from, const string &to,
                      fmsg->get_src_hwaddress(), fmsg->get_dst_hwaddress(),
                      fmsg->get_dst_port());
     }
+    else if (type == ROUTE_MOD) {
+        RouteMod* rmmsg = dynamic_cast<RouteMod*>(&msg);
+        boost::shared_array<uint8_t> ofmsg = create_flow_mod(rmmsg->get_mod(),
+                                    rmmsg->get_matches(),
+                                    rmmsg->get_actions());
+        if (ofmsg.get() == NULL) {
+            VLOG_DBG(lg, "Failed to create OpenFlow FlowMod");
+        } else {
+            send_of_msg(rmmsg->get_id(), ofmsg.get());
+        }
+    }
     else if (type == DATA_PLANE_MAP) {
         DataPlaneMap* dpmmsg = dynamic_cast<DataPlaneMap*>(&msg);
         table.update_dp_port(dpmmsg->get_dp_id(), dpmmsg->get_dp_port(),
