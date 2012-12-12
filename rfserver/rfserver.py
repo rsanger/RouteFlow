@@ -3,12 +3,16 @@
 
 import sys
 import logging
+import binascii
+
+from bson.binary import Binary
 
 import rflib.ipc.IPC as IPC
 import rflib.ipc.MongoIPC as MongoIPC
 from rflib.ipc.RFProtocol import *
 from rflib.ipc.RFProtocolFactory import RFProtocolFactory
 from rflib.defs import *
+from rflib.types.Action import *
 
 from rftable import *
 
@@ -41,6 +45,8 @@ class RFServer(RFProtocolFactory, IPC.IPCMessageProcessor):
             ri = RFServer.RouteInformation()
             ri.from_message(msg)
             self.register_route_information(ri)
+        elif type_ == ROUTE_MOD:
+            self.register_route_mod(msg)
         elif type_ == DATAPATH_PORT_REGISTER:
             self.register_dp_port(msg.get_dp_id(), msg.get_dp_port());
         elif type_ == DATAPATH_DOWN:
@@ -132,6 +138,39 @@ class RFServer(RFProtocolFactory, IPC.IPCMessageProcessor):
         self.ipc.send(RFSERVER_RFPROXY_CHANNEL, RFPROXY_ID, msg);
         self.log.debug("Sending client route information to datapath (vm_id=%s, vm_port=%i, dp_id=%s, dp_port=%i)" %
                        (format_id(entry.vm_id), entry.vm_port, format_id(entry.dp_id), entry.dp_port))
+
+    # Handle RouteMod messages (type ROUTE_MOD)
+    #
+    # Takes a RouteMod, replaces its VM id,port with the associated DP id,port
+    # and sends to the corresponding controller
+    def register_route_mod(self, rm):
+        vmid = rm.get_id()
+
+        # Find the output action
+        for i, action in enumerate(rm.actions):
+            if action['type'] is RFAT_OUTPUT:
+                # Put the action in an action object for easy modification
+                action_output = Action.from_dict(action)
+                vmport = action_output.get_value()
+
+                # Find the (vmid, vmport), (dpid, dpport) pair
+                entry = self.rftable.get_entry_by_vm_port(vmid, vmport)
+
+                # If we can't find an associated datapath for this RouteMod, drop it.
+                if entry is None:
+                    self.log.debug("Received RouteMod destined for unknown datapath - Dropping (vm_id=%s)" % (format_id(vm_id)))
+                    return
+
+                # Replace the VM id,port with the Datapath id.port
+                action_output.set_value(entry.dp_port)
+                rm.set_id(int(entry.dp_id))
+                rm.actions[i] = action_output.to_dict()
+
+                self.ipc.send(RFSERVER_RFPROXY_CHANNEL, RFPROXY_ID, rm)
+                return
+
+        # If no output action is found, don't forward the routemod.
+        self.log.debug("Received RouteMod with no Output Port - Dropping (vm_id=%s)" % (format_id(vm_id)))
 
     # DatapathPortRegister methods
     def register_dp_port(self, dp_id, dp_port):
