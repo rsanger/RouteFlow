@@ -1,4 +1,5 @@
 from TLV import *
+from bson.binary import Binary
 
 # Action Type Variables ('Enum')
 RFAT_OUTPUT = 0         # Output port
@@ -68,4 +69,4 @@ class Action(TLV):
             return None
 
     def set_value(self, value):
-        self._value = self.type_to_bin(self._type, value)
+        self._value = Binary(self.type_to_bin(self._type, value), 0)
