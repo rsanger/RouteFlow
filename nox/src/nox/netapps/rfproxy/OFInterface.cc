@@ -135,6 +135,8 @@ boost::shared_array<uint8_t> create_flow_mod(uint8_t mod,
 
     boost::shared_array<uint8_t> raw_of(new uint8_t[size]);
     ofm = (ofp_flow_mod*) raw_of.get();
+    ofm_init(ofm, size);
+
     ofp_action_header *oah = ofm->actions;
 
     std::vector<Match*>::iterator iter_mat;
