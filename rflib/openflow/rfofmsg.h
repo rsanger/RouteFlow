@@ -17,6 +17,8 @@
 #define TPORT_BGP       0x00B3
 #define TPORT_LDP       0x286
 
+#define OF_BUFFER_NONE	0xffffffff
+
 typedef uint8_t* MSG;
 MSG msg_new(uint8_t* src, size_t size);
 size_t msg_size(MSG msg);

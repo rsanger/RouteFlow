@@ -242,12 +242,12 @@ void RFClient::load_interfaces() {
         family = ifa->ifa_addr->sa_family;
 
         if (family == AF_PACKET && strcmp(ifa->ifa_name, "eth0") != 0 && strcmp(ifa->ifa_name, "lo") != 0) {
-	        //if (0 == intfNum) {
+	        if (0 == intfNum) {
 		        get_hwaddr_byname(ifa->ifa_name, hwaddress);
-	        /*} else {
+	        } else {
 		        set_hwaddr_byname(ifa->ifa_name, hwaddress, ifa->ifa_flags);
 		        syslog(LOG_INFO, "Setting MAC Addr (%s)", ifa->ifa_name);
-	        }*/
+	        }
 	        string ifaceName = ifa->ifa_name;
 	        size_t pos = ifaceName.find_first_of("123456789");
 	        string port_num = ifaceName.substr(pos, ifaceName.length() - pos + 1);

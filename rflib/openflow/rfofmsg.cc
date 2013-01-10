@@ -236,7 +236,7 @@ MSG create_config_msg(DATAPATH_CONFIG_OPERATION operation) {
                         OFP_FLOW_PERMANENT, OFPP_NONE);
         ofm->priority = htons(0);
     } else if (operation == DC_DROP_ALL) {
-        ofm_set_command(ofm, OFPFC_ADD, 0, OFP_FLOW_PERMANENT,
+        ofm_set_command(ofm, OFPFC_ADD, OF_BUFFER_NONE, OFP_FLOW_PERMANENT,
                         OFP_FLOW_PERMANENT, OFPP_NONE);
         /* No action implies discard. */
         ofm->priority = htons(1);
@@ -285,7 +285,7 @@ MSG create_config_msg(DATAPATH_CONFIG_OPERATION operation) {
                 break;
         }
 
-        ofm_set_command(ofm, OFPFC_ADD, UINT32_MAX, OFP_FLOW_PERMANENT,
+        ofm_set_command(ofm, OFPFC_ADD, OF_BUFFER_NONE, OFP_FLOW_PERMANENT,
                         OFP_FLOW_PERMANENT, OFPP_NONE);
         ofm_set_action(ofm->actions, OFPAT_OUTPUT, sizeof(ofp_action_output),
                        OFPP_CONTROLLER, RF_MAX_PACKET_SIZE, 0);
@@ -321,7 +321,7 @@ MSG create_flow_install_msg(uint32_t ip, uint32_t mask, uint8_t srcMac[],
     }
     ofm_match_nw(ofm, (((uint32_t) 31 + mask) << OFPFW_NW_DST_SHIFT), 0, 0, 0, ip);
 
-    ofm_set_command(ofm, OFPFC_ADD, UINT32_MAX, OFP_FLOW_PERMANENT,
+    ofm_set_command(ofm, OFPFC_ADD, OF_BUFFER_NONE, OFP_FLOW_PERMANENT,
                     OFP_FLOW_PERMANENT, OFPP_NONE);
 
     if (mask == 32) {
@@ -374,7 +374,7 @@ MSG create_flow_remove_msg(uint32_t ip, uint32_t mask, uint8_t srcMac[]) {
     ofm_match_nw(ofm, (((uint32_t) 31 + mask) << OFPFW_NW_DST_SHIFT), 0, 0, 0, ip);
 
     ofm->priority = htons((OFP_DEFAULT_PRIORITY + mask));
-    ofm_set_command(ofm, OFPFC_DELETE_STRICT, UINT32_MAX, 0,
+    ofm_set_command(ofm, OFPFC_DELETE_STRICT, OF_BUFFER_NONE, 0,
                     OFP_FLOW_PERMANENT, OFPP_NONE);
 
     return msg_new((uint8_t*) &ofm->header, size);
@@ -407,7 +407,7 @@ MSG create_temporary_flow_msg(uint32_t ip, uint32_t mask, uint8_t srcMac[]) {
     ofm_match_nw(ofm, (((uint32_t) 31 + mask) << OFPFW_NW_DST_SHIFT), 0, 0, 0, ip);
 
     ofm->priority = htons((OFP_DEFAULT_PRIORITY + mask));
-    ofm_set_command(ofm, OFPFC_ADD, UINT32_MAX, 60, OFP_FLOW_PERMANENT,
+    ofm_set_command(ofm, OFPFC_ADD, OF_BUFFER_NONE, 60, OFP_FLOW_PERMANENT,
                     OFPP_NONE);
     ofm_set_action(ofm->actions, OFPAT_OUTPUT, sizeof(ofp_action_output), 0, 0, 0);
 

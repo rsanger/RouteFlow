@@ -143,6 +143,8 @@ int FlowTable::updateRouteTable(const struct sockaddr_nl *who, struct nlmsghdr *
 		return 0;
 	}
 
+        std::cout << "flags " << n->nlmsg_flags << "\n";
+
 	char net[INET_ADDRSTRLEN];
 	char gw[INET_ADDRSTRLEN];
 	char intf[IF_NAMESIZE + 1];
@@ -199,15 +201,6 @@ int FlowTable::updateRouteTable(const struct sockaddr_nl *who, struct nlmsghdr *
 		}
 	}
 
-	/* Skipping routes to directly attached networks (next-hop field is blank) */
-	{
-		struct in_addr gwAddr;
-		if (inet_aton(gw, &gwAddr) == 0)
-		{
-			return 0;
-		}
-	}
-
 	struct in_addr convmask;
 	convmask.s_addr = htonl(~((1 << (32 - rtmsg_ptr->rtm_dst_len)) - 1));
 	char mask[INET_ADDRSTRLEN];
@@ -217,12 +210,23 @@ int FlowTable::updateRouteTable(const struct sockaddr_nl *who, struct nlmsghdr *
 	map<string, Interface>::iterator it;
 	list<RouteEntry>::iterator itRoutes;
 
+        /* Skipping routes to directly attached networks (next-hop field is blank) */
+        {
+                struct in_addr gwAddr;
+                if (inet_aton(gw, &gwAddr) == 0)
+                {
+			std::cout << "discarding " << " net=" << net << ", mask=" << mask << " because no gateway\n";
+                        return 0;
+                }
+        }
+
 	switch (n->nlmsg_type) {
 	case RTM_NEWROUTE:
 		std::cout << "netlink->RTM_NEWROUTE: net=" << net << ", mask=" << mask << ", gw=" << gw << std::endl;
 
 		// Discard if there's no gateway
 		if (inet_addr(gw) == INADDR_NONE) {
+                        std::cout << "discarding " << " net=" << net << ", mask=" << mask << " because no gateway\n";
 			return 0;
 		}
 
@@ -235,12 +239,13 @@ int FlowTable::updateRouteTable(const struct sockaddr_nl *who, struct nlmsghdr *
 			rentry.interface = it->second;
 
 		if (not rentry.interface.active) {
+			std::cout << "discarding " << " net=" << net << ", mask=" << mask << " because interface not active\n";
 			return 0;
 		}
 
 		for (itRoutes = FlowTable::routeTable.begin(); itRoutes != FlowTable::routeTable.end(); itRoutes++) {
 			if (rentry == (*itRoutes)) {
-				std::cout << "Duplicate route add request.\n" << "\n";
+				std::cout << "Duplicate route add request.\n";
 				return 0;
 			}
 		}
@@ -260,6 +265,7 @@ int FlowTable::updateRouteTable(const struct sockaddr_nl *who, struct nlmsghdr *
 			rentry.interface = it->second;
 
 		if (not rentry.interface.active) {
+                        std::cout << "discarding " << " net=" << net << ", mask=" << mask << " because interface not active";
 			return 0;
 		}
 
