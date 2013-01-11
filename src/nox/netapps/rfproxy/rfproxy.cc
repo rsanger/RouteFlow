@@ -88,22 +88,24 @@ Disposition rfproxy::on_datapath_down(const Event& e) {
 
 Disposition rfproxy::on_packet_in(const Event& e) {
     const Packet_in_event& pi = assert_cast<const Packet_in_event&> (e);
-	Flow flow(pi.in_port, *pi.get_buffer());
     uint64_t dp_id = pi.datapath_id.as_host();
     uint32_t in_port = pi.in_port;
+    uint64_t vs_id = pi.datapath_id.as_host();
+    uint32_t vs_port = pi.in_port;
 
-	// Drop all LLDP packets
-	if (flow.dl_type == ethernet::LLDP) {
-		return CONTINUE;
-	}
+    Nonowning_buffer orig_buf(*pi.get_buffer());
+    Buffer *buf = &orig_buf;
+    Flow orig_flow(in_port, *buf);
+    Flow *flow = &orig_flow;
+
+    // Drop all LLDP packets
+    if (flow->dl_type == ethernet::LLDP) {
+        return CONTINUE;
+    }
 
     // If we have a mapping packet, inform RFServer through a Map message
-	if (flow.dl_type == htons(RF_ETH_PROTO)) {
-		Nonowning_buffer b(*pi.get_buffer());
-		const eth_data* data = b.try_pull<eth_data> ();
-
-		uint64_t vs_id = pi.datapath_id.as_host();
-		uint32_t vs_port = pi.in_port;
+    if (flow->dl_type == htons(RF_ETH_PROTO)) {
+        const eth_data* data = buf->try_pull<eth_data> ();
         VLOG_INFO(lg,
             "Received mapping packet (vm_id=%0#"PRIx64", vm_port=%d, vs_id=%0#"PRIx64", vs_port=%d)",
             data->vm_id,
@@ -126,7 +128,7 @@ Disposition rfproxy::on_packet_in(const Event& e) {
     if (IS_RFVS(dp_id)) {
         PORT dp_port = table.vs_port_to_dp_port(dp_id, in_port);
         if (dp_port != NONE)
-            send_packet_out(dp_port.first, dp_port.second, *(pi.get_buffer()));
+            send_packet_out(dp_port.first, dp_port.second, *buf);
         else
             VLOG_DBG(lg, "Unmapped RFVS port (vs_id=%0#"PRIx64", vs_port=%d)",
                      dp_id, in_port);
@@ -135,7 +137,7 @@ Disposition rfproxy::on_packet_in(const Event& e) {
     else {
         PORT vs_port = table.dp_port_to_vs_port(dp_id, in_port);
         if (vs_port != NONE)
-            send_packet_out(vs_port.first, vs_port.second, *(pi.get_buffer()));
+            send_packet_out(vs_port.first, vs_port.second, *buf);
         else
             VLOG_DBG(lg, "Unmapped datapath port (vs_id=%0#"PRIx64", vs_port=%d)",
                      dp_id, in_port);
