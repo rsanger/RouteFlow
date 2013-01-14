@@ -66,64 +66,6 @@ void rfproxy::flow_config(uint64_t dp_id, uint32_t operation_id) {
     free(ofmsg);
 }
 
-void rfproxy::flow_add(uint64_t dp_id,
-                       IPAddress address, IPAddress netmask,
-                       MACAddress src_hwaddress, MACAddress dst_hwaddress,
-                       uint32_t dst_port) {
-    uint32_t address_ = address.toUint32();
-    uint32_t netmask_ = netmask.toCIDRMask();
-    uint8_t src_hwaddress_[IFHWADDRLEN];
-    src_hwaddress.toArray(src_hwaddress_);
-    uint8_t dst_hwaddress_[IFHWADDRLEN];
-    dst_hwaddress.toArray(dst_hwaddress_);
-
-    MSG ofmsg = create_flow_install_msg(address_, netmask_,
-                                        src_hwaddress_, dst_hwaddress_,
-                                        dst_port);
-    if (send_of_msg(dp_id, ofmsg) == SUCCESS)
-	    VLOG_INFO(lg,
-	        "ofp_flow_mod(add) was sent to datapath (dp_id=%0#"PRIx64")",
-	        dp_id);
-	else
-	    VLOG_INFO(lg,
-	        "Error sending ofp_flow_mod(add) to datapath (dp_id=%0#"PRIx64")",
-	        dp_id);
-
-    free(ofmsg);
-}
-
-void rfproxy::flow_delete(uint64_t dp_id,
-                          IPAddress address, IPAddress netmask,
-                          MACAddress src_hwaddress) {
-    uint32_t address_ = address.toUint32();
-    uint32_t netmask_ = netmask.toCIDRMask();
-    uint8_t src_hwaddress_[IFHWADDRLEN];
-    src_hwaddress.toArray(src_hwaddress_);
-
-    MSG ofmsg1 = create_flow_remove_msg(address_, netmask_, src_hwaddress_);
-    if (send_of_msg(dp_id, ofmsg1) == SUCCESS)
-	    VLOG_INFO(lg,
-	        "ofp_flow_mod(delete) was sent to datapath (dp_id=%0#"PRIx64")",
-	        dp_id);
-	else
-	    VLOG_INFO(lg,
-	        "Error sending ofp_flow_mod(delete) to datapath (dp_id=%0#"PRIx64")",
-	        dp_id);
-    free(ofmsg1);
-
-    MSG ofmsg2 = create_temporary_flow_msg(address_, netmask_, src_hwaddress_);
-    if (send_of_msg(dp_id, ofmsg2) == SUCCESS)
-	    VLOG_INFO(lg,
-	        "ofp_flow_mod(temporary) was sent to datapath (dp_id=%0#"PRIx64")",
-	        dp_id);
-	else
-	    VLOG_INFO(lg,
-	        "Error sending ofp_flow_mod(temporary) to datapath (dp_id=%0#"PRIx64")",
-	        dp_id);
-    free(ofmsg2);
-}
-
-
 // Event handlers
 Disposition rfproxy::on_datapath_up(const Event& e) {
     const Datapath_join_event& dj = assert_cast<const Datapath_join_event&> (e);
@@ -226,18 +168,6 @@ bool rfproxy::process(const string &from, const string &to,
         DatapathConfig *config = dynamic_cast<DatapathConfig*>(&msg);
         flow_config(config->get_dp_id(),
                     config->get_operation_id());
-    }
-    else if (type == FLOW_MOD) {
-        FlowMod* fmsg = dynamic_cast<FlowMod*>(&msg);
-        if (fmsg->get_is_removal())
-            flow_delete(fmsg->get_dp_id(),
-                        fmsg->get_address(), fmsg->get_netmask(),
-                        fmsg->get_src_hwaddress());
-        else
-            flow_add(fmsg->get_dp_id(),
-                     fmsg->get_address(), fmsg->get_netmask(),
-                     fmsg->get_src_hwaddress(), fmsg->get_dst_hwaddress(),
-                     fmsg->get_dst_port());
     }
     else if (type == ROUTE_MOD) {
         RouteMod* rmmsg = static_cast<RouteMod*>(&msg);
