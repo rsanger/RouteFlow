@@ -240,19 +240,19 @@ void ofm_set_command(ofp_flow_mod* ofm, enum ofp_flow_mod_command cmd) {
  * mask: CIDR mask, eg 24
  * shift: OpenFlow shift value (OFPFW_NW_*_SHIFT)
  */
-uint32_t ofp_get_mask(uint32_t mask, int shift) {
+uint32_t ofp_get_mask(uint8_t mask, int shift) {
     return ((uint32_t) 31 + mask) << shift;
 }
 
 /**
  * Convert the given full IPv4 mask to an OpenFlow 1.0 match bitmask
  *
- * ip_mask: Full IPv4 bitmask, eg 255.255.255.0
+ * ip_mask: Full IPv4 bitmask in network byte-order, eg 255.255.255.0
  * shift: OpenFlow shift value (OFPFW_NW_*_SHIFT)
  */
 uint32_t ofp_get_mask(struct in_addr ip, int shift) {
-    uint32_t cidr_mask = 0;
-    uint32_t ip_mask = ip.s_addr;
+    uint8_t cidr_mask = 0;
+    uint32_t ip_mask = ntohl(ip.s_addr);
 
     /* Convert to CIDR mask */
     while (ip_mask & (1<<31)) {
