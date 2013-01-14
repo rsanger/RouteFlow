@@ -381,9 +381,12 @@ void FlowTable::addFlowToHw(const RouteEntry& rentry) {
 	dstMac.toArray(dstaddr);
 	Action setdldst = Action(RFAT_SET_ETH_DST, dstaddr);
 
-	msg.add_action(outport);
+	Match local_dst(RFMT_ETHERNET, srcaddr);
+	msg.add_match(local_dst);
+
 	msg.add_action(setdlsrc);
 	msg.add_action(setdldst);
+	msg.add_action(outport);
 
 	// Send
 	FlowTable::ipc->send(RFCLIENT_RFSERVER_CHANNEL, RFSERVER_ID, msg);
@@ -425,9 +428,12 @@ void FlowTable::addFlowToHw(const HostEntry& hentry) {
 	hentry.hwaddress.toArray(dstaddr);
 	Action setdldst = Action(RFAT_SET_ETH_DST, dstaddr);
 
-	msg.add_action(outport);
+	Match local_dst(RFMT_ETHERNET, srcaddr);
+	msg.add_match(local_dst);
+
 	msg.add_action(setdlsrc);
 	msg.add_action(setdldst);
+	msg.add_action(outport);
 
     // Send
     FlowTable::ipc->send(RFCLIENT_RFSERVER_CHANNEL, RFSERVER_ID, msg);
@@ -458,6 +464,11 @@ void FlowTable::delFlowFromHw(const RouteEntry& rentry) {
 		ipdst.reset(new Match(RFMT_IPV4, &ipmatch));
 	}
 	msg.add_match(*(ipdst.get()));
+
+	uint8_t dstaddr[IFHWADDRLEN];
+	rentry.interface.hwaddress.toArray(dstaddr);
+	Match local_dst(RFMT_ETHERNET, dstaddr);
+	msg.add_match(local_dst);
 
 	Action outport = Action(RFAT_OUTPUT, rentry.interface.port);
 
@@ -490,6 +501,11 @@ void FlowTable::delFlowFromHw(const HostEntry& hentry) {
 		ipdst.reset(new Match(RFMT_IPV4, &ipmatch));
 	}
 	msg.add_match(*(ipdst.get()));
+
+	uint8_t dstaddr[IFHWADDRLEN];
+	hentry.interface.hwaddress.toArray(dstaddr);
+	Match local_dst(RFMT_ETHERNET, dstaddr);
+	msg.add_match(local_dst);
 
 	Action outport = Action(RFAT_OUTPUT, hentry.interface.port);
 

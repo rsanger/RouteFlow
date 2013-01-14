@@ -75,7 +75,6 @@ mongo::BSONObj Action::to_BSON() const {
  * BSONObj is not a valid TLV, this method returns NULL.
  */
 Action* Action::from_BSON(const mongo::BSONObj bson) {
-    const uint8_t *value = NULL;
     const mongo::BSONElement &btype = bson["type"];
     const mongo::BSONElement &bvalue = bson["value"];
 
@@ -87,20 +86,19 @@ Action* Action::from_BSON(const mongo::BSONObj bson) {
 
     ActionType type = (ActionType)btype.Int();
     int len = bvalue.valuesize();
-    boost::scoped_array<uint8_t> arr;
+    const uint8_t *value = (uint8_t*)bvalue.binData(len);
 
+    boost::scoped_array<uint8_t> arr(new uint8_t[type_to_length(type)]);
     switch(type) {
         case RFAT_OUTPUT:
         case RFAT_PUSH_MPLS:
         case RFAT_SWAP_MPLS: {
             uint32_t label = ntohl(*(uint32_t*)value);
-            arr.reset(new uint8_t[type_to_length(type)]);
             memcpy(arr.get(), &label, type_to_length(type));
             value = arr.get();
             break;
         }
         default:
-            value = (uint8_t*)bvalue.binData(len);
             break;
     }
 

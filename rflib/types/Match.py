@@ -1,4 +1,8 @@
 from TLV import *
+<<<<<<< HEAD
+=======
+from bson.binary import Binary
+>>>>>>> 1f9426f4d828e2412adb59bad20789174beb9515
 
 RFMT_IPV4 = 0        # Match IPv4 Destination
 RFMT_IPV6 = 1        # Match IPv6 Destination
@@ -61,4 +65,8 @@ class Match(TLV):
             return None
 
     def set_value(value):
+<<<<<<< HEAD
         _value = self.type_to_bin(self._type, value)
+=======
+        _value = Binary(self.type_to_bin(self._type, value), 0)
+>>>>>>> 1f9426f4d828e2412adb59bad20789174beb9515
