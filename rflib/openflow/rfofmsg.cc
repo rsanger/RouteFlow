@@ -286,12 +286,7 @@ MSG create_config_msg(DATAPATH_CONFIG_OPERATION operation) {
         ofm_set_command(ofm, OFPFC_DELETE);
         ofm->priority = htons(0);
     } else if (operation == DC_DROP_ALL) {
-<<<<<<< HEAD
-        ofm_set_command(ofm, OFPFC_ADD, OF_BUFFER_NONE, OFP_FLOW_PERMANENT,
-                        OFP_FLOW_PERMANENT, OFPP_NONE);
-=======
         ofm_set_command(ofm, OFPFC_ADD);
->>>>>>> 63d81fd34f9518c1b4b18bdfb2197878ec05783f
         /* No action implies discard. */
         ofm->priority = htons(1);
     } else {

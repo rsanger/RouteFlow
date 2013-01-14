@@ -13,6 +13,7 @@ from rflib.ipc.RFProtocol import *
 from rflib.ipc.RFProtocolFactory import RFProtocolFactory
 from rflib.defs import *
 from rflib.types.Action import *
+from rflib.types.Match import *
 
 from rftable import *
 
@@ -33,14 +34,16 @@ class RFServer(RFProtocolFactory, IPC.IPCMessageProcessor):
         ch.setFormatter(logging.Formatter(logging.BASIC_FORMAT))
         self.log.addHandler(ch)
 
-        self.ipc = MongoIPC.MongoIPCMessageService(MONGO_ADDRESS, MONGO_DB_NAME, RFSERVER_ID)
+        self.ipc = MongoIPC.MongoIPCMessageService(MONGO_ADDRESS, 
+                                                   MONGO_DB_NAME, RFSERVER_ID)
         self.ipc.listen(RFCLIENT_RFSERVER_CHANNEL, self, self, False)
         self.ipc.listen(RFSERVER_RFPROXY_CHANNEL, self, self, True)
 
     def process(self, from_, to, channel, msg):
         type_ = msg.get_type()
         if type_ == PORT_REGISTER:
-            self.register_vm_port(msg.get_vm_id(), msg.get_vm_port())
+            self.register_vm_port(msg.get_vm_id(), msg.get_vm_port(),
+                                  msg.get_hwaddress())
         elif type_ == ROUTE_INFO:
             ri = RFServer.RouteInformation()
             ri.from_message(msg)
@@ -61,7 +64,7 @@ class RFServer(RFProtocolFactory, IPC.IPCMessageProcessor):
         return True
 
     # Port register methods
-    def register_vm_port(self, vm_id, vm_port):
+    def register_vm_port(self, vm_id, vm_port, eth_addr):
         action = None
         config_entry = self.config.get_config_for_vm_port(vm_id, vm_port)
         if config_entry is None:
@@ -80,21 +83,25 @@ class RFServer(RFProtocolFactory, IPC.IPCMessageProcessor):
 
         # Apply action
         if action == REGISTER_IDLE:
-            self.rftable.set_entry(RFEntry(vm_id=vm_id, vm_port=vm_port))
-            self.log.info("Registering client port as idle (vm_id=%s, vm_port=%i)" %
-                          (format_id(vm_id), vm_port))
+            self.rftable.set_entry(RFEntry(vm_id=vm_id, vm_port=vm_port, 
+                                           eth_addr=eth_addr))
+            self.log.info("Registering client port as idle "
+                          "(vm_id=%s, vm_port=%i, eth_addr = %s)" % 
+                          (format_id(vm_id), vm_port, eth_addr))
         elif action == REGISTER_ASSOCIATED:
-            entry.associate(vm_id, vm_port)
+            entry.associate(vm_id, vm_port, eth_addr=eth_addr)
             self.rftable.set_entry(entry)
             self.config_vm_port(vm_id, vm_port)
-            self.log.info("Registering client port and associating to datapath port (vm_id=%s, vm_port=%i, dp_id=%s, dp_port=%s)" %
-                          (format_id(vm_id), vm_port, format(entry.dp_id), entry.dp_port))
+            self.log.info("Registering client port and associating to "
+                          "datapath port (vm_id=%s, vm_port=%i, dp_id=%s, "
+                          "dp_port=%s)" % (format_id(vm_id), vm_port, 
+                                           format(entry.dp_id), entry.dp_port))
 
     def config_vm_port(self, vm_id, vm_port):
         self.ipc.send(RFCLIENT_RFSERVER_CHANNEL, str(vm_id),
                       PortConfig(vm_id=vm_id, vm_port=vm_port, operation_id=0))
-        self.log.info("Asking client for mapping message for port (vm_id=%s, vm_port=%i)" %
-                      (format_id(vm_id), vm_port))
+        self.log.info("Asking client for mapping message for port "
+                      "(vm_id=%s, vm_port=%i)" % (format_id(vm_id), vm_port))
 
     # RouteInfo methods
     class RouteInformation:
@@ -141,8 +148,10 @@ class RFServer(RFProtocolFactory, IPC.IPCMessageProcessor):
             dst_hwaddress=ri.dst_hwaddress,
             is_removal=ri.is_removal)
         self.ipc.send(RFSERVER_RFPROXY_CHANNEL, str(entry.ct_id), msg);
-        self.log.debug("Sending client route information to datapath (vm_id=%s, vm_port=%i, dp_id=%s, dp_port=%i)" %
-                       (format_id(entry.vm_id), entry.vm_port, format_id(entry.dp_id), entry.dp_port))
+        self.log.debug("Sending client route information to datapath "
+                       "(vm_id=%s, vm_port=%i, dp_id=%s, dp_port=%i)" %
+                       (format_id(entry.vm_id), entry.vm_port, 
+                        format_id(entry.dp_id), entry.dp_port))
 
     # Handle RouteMod messages (type ROUTE_MOD)
     #
@@ -150,7 +159,7 @@ class RFServer(RFProtocolFactory, IPC.IPCMessageProcessor):
     # and sends to the corresponding controller
     def register_route_mod(self, rm):
         vm_id = rm.get_id()
-
+        action_output = None
         # Find the output action
         for i, action in enumerate(rm.actions):
             if action['type'] is RFAT_OUTPUT:
@@ -161,21 +170,37 @@ class RFServer(RFProtocolFactory, IPC.IPCMessageProcessor):
                 # Find the (vmid, vm_port), (dpid, dpport) pair
                 entry = self.rftable.get_entry_by_vm_port(vm_id, vm_port)
 
-                # If we can't find an associated datapath for this RouteMod, drop it.
+                # If we can't find an associated datapath for this RouteMod, 
+                # drop it.
                 if entry is None:
-                    self.log.info("Received RouteMod destined for unknown datapath - Dropping (vm_id=%s, vm_port=%s)" % (format_id(vm_id), vm_port))
+                    self.log.info("Received RouteMod destined for unknown "
+                                  "datapath - Dropping (vm_id=%s, vm_port=%s)" 
+                                  % (format_id(vm_id), vm_port))
                     return
 
                 # Replace the VM id,port with the Datapath id.port
                 action_output.set_value(entry.dp_port)
                 rm.set_id(int(entry.dp_id))
                 rm.actions[i] = action_output.to_dict()
+                break
 
-                self.ipc.send(RFSERVER_RFPROXY_CHANNEL, str(entry.ct_id), rm)
-                return
+        if action_output is None:
+            # If no output action is found, don't forward the routemod.
+            self.log.info("Received RouteMod with no Output Port - Dropping "
+                          "(vm_id=%s, vm_port=%s)" % (format_id(vm_id), 
+                                                      vm_port))
+        
+        for i, match in enumerate(rm.matches):
+            if match['type'] is RFMT_ETHERNET:
+                for entry in self.rftable.get_entries(vm_id=vm_id):
+                    if entry.get_status() == RFENTRY_ACTIVE:
+                     # TODO: figure out whether I should be adding matches for 
+                     # ports that are down..
+                     match_eth = Match.ETHERNET(entry.eth_addr)
+                     rm.matches[i] = match_eth.to_dict()
+                     self.ipc.send(RFSERVER_RFPROXY_CHANNEL, 
+                                  str(entry.ct_id), rm)
 
-        # If no output action is found, don't forward the routemod.
-        self.log.info("Received RouteMod with no Output Port - Dropping (vm_id=%s, vm_port=%s)" % (format_id(vm_id), vm_port))
 
     # DatapathPortRegister methods
     def register_dp_port(self, ct_id, dp_id, dp_port):
@@ -190,7 +215,8 @@ class RFServer(RFProtocolFactory, IPC.IPCMessageProcessor):
             # Register idle DP awaiting for configuration
             action = REGISTER_IDLE
         else:
-            entry = self.rftable.get_entry_by_vm_port(config_entry.vm_id, config_entry.vm_port)
+            entry = self.rftable.get_entry_by_vm_port(config_entry.vm_id, 
+                                                      config_entry.vm_port)
             # If there's no entry, we have no VM, register DP as idle
             if entry is None:
                 action = REGISTER_IDLE
@@ -200,15 +226,20 @@ class RFServer(RFProtocolFactory, IPC.IPCMessageProcessor):
 
         # Apply action
         if action == REGISTER_IDLE:
-            self.rftable.set_entry(RFEntry(ct_id=ct_id, dp_id=dp_id, dp_port=dp_port))
-            self.log.info("Registering datapath port as idle (dp_id=%s, dp_port=%i)" %
+            self.rftable.set_entry(RFEntry(ct_id=ct_id, dp_id=dp_id, 
+                                           dp_port=dp_port))
+            self.log.info("Registering datapath port as idle "
+                          "(dp_id=%s, dp_port=%i)" % 
                           (format_id(dp_id), dp_port))
         elif action == REGISTER_ASSOCIATED:
             entry.associate(dp_id, dp_port, ct_id)
             self.rftable.set_entry(entry)
             self.config_vm_port(entry.vm_id, entry.vm_port)
-            self.log.info("Registering datapath port and associating to client port (dp_id=%s, dp_port=%i, vm_id=%s, vm_port=%s)" %
-                          (format_id(dp_id), dp_port, format(entry.vm_id), entry.vm_port))
+            self.log.info("Registering datapath port and associating to "
+                          "client port (dp_id=%s, dp_port=%i, vm_id=%s, "
+                          "vm_port=%s)" % (format_id(dp_id), dp_port, 
+                                           format_id(entry.vm_id), 
+                                           entry.vm_port))
 
     def send_datapath_config_message(self, ct_id, dp_id, operation_id):
         self.ipc.send(RFSERVER_RFPROXY_CHANNEL, str(ct_id),
@@ -224,8 +255,10 @@ class RFServer(RFProtocolFactory, IPC.IPCMessageProcessor):
             self.send_datapath_config_message(ct_id, dp_id, DC_ALL)
             self.log.info("Configuring RFVS (dp_id=%s)" % format_id(dp_id))
         elif self.rftable.is_dp_registered(ct_id, dp_id):
-            # Configure a normal switch. Clear the tables and install default flows.
-            self.send_datapath_config_message(ct_id, dp_id, DC_CLEAR_FLOW_TABLE);
+            # Configure a normal switch. Clear the tables and install default
+            # flows.
+            self.send_datapath_config_message(ct_id, dp_id, 
+                                              DC_CLEAR_FLOW_TABLE);
             # TODO: enforce order: clear should always be executed first
             self.send_datapath_config_message(ct_id, dp_id, DC_DROP_ALL);
             self.send_datapath_config_message(ct_id, dp_id, DC_OSPF);
@@ -275,8 +308,12 @@ class RFServer(RFProtocolFactory, IPC.IPCMessageProcessor):
                                dp_id=entry.dp_id, dp_port=entry.dp_port,
                                vs_id=vs_id, vs_port=vs_port)
             self.ipc.send(RFSERVER_RFPROXY_CHANNEL, str(entry.ct_id), msg)
-            self.log.info("Mapping client-datapath association (vm_id=%s, vm_port=%i, dp_id=%s, dp_port=%i, vs_id=%s, vs_port=%i)" %
-                          (format_id(entry.vm_id), entry.vm_port, format_id(entry.dp_id), entry.dp_port, format_id(entry.vs_id), entry.vs_port))
+            self.log.info("Mapping client-datapath association "
+                          "(vm_id=%s, vm_port=%i, dp_id=%s, "
+                          "dp_port=%i, vs_id=%s, vs_port=%i)" %
+                          (format_id(entry.vm_id), entry.vm_port, 
+                           format_id(entry.dp_id), entry.dp_port, 
+                           format_id(entry.vs_id), entry.vs_port))
 
 
 if len(sys.argv) == 2:

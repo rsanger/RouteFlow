@@ -75,7 +75,7 @@ RFClient::RFClient(uint64_t id, const string &address) {
         Interface i = it->second;
         ifacesMap[i.name] = i;
 
-        PortRegister msg(this->id, i.port);
+        PortRegister msg(this->id, i.port, i.hwaddress);
         this->ipc->send(RFCLIENT_RFSERVER_CHANNEL, RFSERVER_ID, msg);
         syslog(LOG_INFO, "Registering client port (vm_port=%d)", i.port);
     }
@@ -229,6 +229,7 @@ void RFClient::load_interfaces() {
     struct ifaddrs *ifaddr, *ifa;
     int family;
     int intfNum;
+    uint8_t hwaddress[IFHWADDRLEN];
 
     if (getifaddrs(&ifaddr) == -1) {
         perror("getifaddrs");

@@ -21,7 +21,6 @@ class RFClient : private RFProtocolFactory, private IPCMessageProcessor {
         map<int, Interface> interfaces;
         vector<uint32_t> down_ports;
 
-        uint8_t hwaddress[IFHWADDRLEN];
         int init_ports;
 
         void startFlowTable();
