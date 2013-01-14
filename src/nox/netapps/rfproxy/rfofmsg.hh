@@ -38,9 +38,5 @@ void ofm_set_command(ofp_flow_mod* ofm, enum ofp_flow_mod_command cmd);
 void ofm_set_command(ofp_flow_mod* ofm, uint16_t cmd, uint32_t id, uint16_t idle_to, uint16_t hard_to, uint16_t port);
 
 MSG create_config_msg(DATAPATH_CONFIG_OPERATION operation);
-// TODO: mask doesn't need to be an uint32_t in these three functions
-MSG create_flow_install_msg(uint32_t ip, uint32_t mask, uint8_t srcMac[], uint8_t dstMac[], uint32_t dstPort);
-MSG create_flow_remove_msg(uint32_t ip, uint32_t mask, uint8_t srcMac[]);
-MSG create_temporary_flow_msg(uint32_t ip, uint32_t mask, uint8_t srcMac[]);
 
 #endif /* __RFOFMSG_H__ */
