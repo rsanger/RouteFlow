@@ -244,30 +244,26 @@ class RFEntry:
         
 class RFConfigEntry:
     def __init__(self, vm_id=None, vm_port=None, ct_id=None, dp_id=None,
-                 dp_port=None, eth_addr=None):
+                 dp_port=None):
         self.id = None
         self.vm_id = vm_id
         self.vm_port = vm_port
         self.ct_id = ct_id
         self.dp_id = dp_id
         self.dp_port = dp_port
-        self.eth_addr = eth_addr
         
     def __str__(self):
         return "vm_id: %s vm_port: %s "\
                "dp_id: %s dp_port: %s "\
-               "eth_addr: %s ct_id: %s" % (str(self.vm_id),
-                                           str(self.vm_port),
-                                           str(self.dp_id),
-                                           str(self.dp_port),
-                                           str(self.eth_addr),
-                                           str(self.ct_id))
+               "ct_id: %s" % (str(self.vm_id), str(self.vm_port),
+                              str(self.dp_id), str(self.dp_port),
+                              str(self.ct_id))
                                 
     def from_dict(self, data):
         for k, v in data.items():
             if str(v) is "":
                 data[k] = None
-            elif k != "_id" and k != "eth_addr": # All our data is int
+            elif k != "_id": # All our data is int
                 data[k] = int(v)
         self.id = data["_id"]
         load_from_dict(data, self, "vm_id")
@@ -275,7 +271,6 @@ class RFConfigEntry:
         load_from_dict(data, self, "ct_id")
         load_from_dict(data, self, "dp_id")
         load_from_dict(data, self, "dp_port")
-        load_from_dict(data, self, "eth_addr")
 
 
     def to_dict(self):
@@ -287,5 +282,4 @@ class RFConfigEntry:
         pack_into_dict(data, self, "ct_id")
         pack_into_dict(data, self, "dp_id")
         pack_into_dict(data, self, "dp_port")
-        pack_into_dict(data, self, "eth_addr")
         return data        
