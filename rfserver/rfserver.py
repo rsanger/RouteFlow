@@ -189,18 +189,21 @@ class RFServer(RFProtocolFactory, IPC.IPCMessageProcessor):
             self.log.info("Received RouteMod with no Output Port - Dropping "
                           "(vm_id=%s, vm_port=%s)" % (format_id(vm_id), 
                                                       vm_port))
+            return
         
         for i, match in enumerate(rm.matches):
             if match['type'] is RFMT_ETHERNET:
                 for entry in self.rftable.get_entries(vm_id=vm_id):
-                    if entry.get_status() == RFENTRY_ACTIVE:
-                     # TODO: figure out whether I should be adding matches for 
-                     # ports that are down..
-                     match_eth = Match.ETHERNET(entry.eth_addr)
-                     rm.matches[i] = match_eth.to_dict()
-                     self.ipc.send(RFSERVER_RFPROXY_CHANNEL, 
-                                  str(entry.ct_id), rm)
-
+                    if action_output.get_value() != entry.dp_port:
+                        self.log.info(str(rm))
+                        self.log.info(str(entry))
+                        if entry.eth_addr is not None:
+                            # TODO: figure out whether I should be adding
+                            # matches for ports that are down..
+                            match_eth = Match.ETHERNET(entry.eth_addr)
+                            rm.matches[i] = match_eth.to_dict()
+                            self.ipc.send(RFSERVER_RFPROXY_CHANNEL, 
+                                          str(entry.ct_id), rm)
 
     # DatapathPortRegister methods
     def register_dp_port(self, ct_id, dp_id, dp_port):
