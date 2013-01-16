@@ -191,17 +191,17 @@ class RFServer(RFProtocolFactory, IPC.IPCMessageProcessor):
                                                       vm_port))
             return
         
-        for i, match in enumerate(rm.matches):
-            if match['type'] is RFMT_ETHERNET:
-                for entry in self.rftable.get_entries(vm_id=vm_id):
-                    if action_output.get_value() != entry.dp_port:
-                        if entry.get_status() == RFENTRY_ACTIVE:
-                            match_eth = Match.ETHERNET(entry.eth_addr)
-                            rm.matches[i] = match_eth.to_dict()
-                            match_in_port = Match.IN_PORT(entry.dp_port)
-                            rm.add_match(match_in_port.to_dict())
-                            self.ipc.send(RFSERVER_RFPROXY_CHANNEL, 
-                                          str(entry.ct_id), rm)
+        #for i, match in enumerate(rm.matches):
+        #    if match['type'] is RFMT_ETHERNET:
+        for entry in self.rftable.get_entries(vm_id=vm_id):
+             if action_output.get_value() != entry.dp_port:
+                 if entry.get_status() == RFENTRY_ACTIVE:
+                     match_eth = Match.ETHERNET(entry.eth_addr)
+                     rm.add_match(match_eth.to_dict())
+                     match_in_port = Match.IN_PORT(entry.dp_port)
+                     rm.add_match(match_in_port.to_dict())
+                     self.ipc.send(RFSERVER_RFPROXY_CHANNEL, 
+                                   str(entry.ct_id), rm)
 
     # DatapathPortRegister methods
     def register_dp_port(self, ct_id, dp_id, dp_port):

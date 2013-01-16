@@ -387,8 +387,8 @@ void FlowTable::addFlowToHw(const RouteEntry& rentry) {
 	dstMac.toArray(dstaddr);
 	Action setdldst = Action(RFAT_SET_ETH_DST, dstaddr);
 
-	Match local_dst(RFMT_ETHERNET, srcaddr);
-	msg.add_match(local_dst);
+	//Match local_dst(RFMT_ETHERNET, srcaddr);
+	//msg.add_match(local_dst);
 
 	msg.add_action(setdlsrc);
 	msg.add_action(setdldst);
@@ -434,8 +434,8 @@ void FlowTable::addFlowToHw(const HostEntry& hentry) {
 	hentry.hwaddress.toArray(dstaddr);
 	Action setdldst = Action(RFAT_SET_ETH_DST, dstaddr);
 
-	Match local_dst(RFMT_ETHERNET, srcaddr);
-	msg.add_match(local_dst);
+	//Match local_dst(RFMT_ETHERNET, srcaddr);
+	//msg.add_match(local_dst);
 
 	msg.add_action(setdlsrc);
 	msg.add_action(setdldst);
@@ -473,8 +473,8 @@ void FlowTable::delFlowFromHw(const RouteEntry& rentry) {
 
 	uint8_t dstaddr[IFHWADDRLEN];
 	rentry.interface.hwaddress.toArray(dstaddr);
-	Match local_dst(RFMT_ETHERNET, dstaddr);
-	msg.add_match(local_dst);
+	//Match local_dst(RFMT_ETHERNET, dstaddr);
+	//msg.add_match(local_dst);
 
 	Action outport = Action(RFAT_OUTPUT, rentry.interface.port);
 
@@ -510,8 +510,8 @@ void FlowTable::delFlowFromHw(const HostEntry& hentry) {
 
 	uint8_t dstaddr[IFHWADDRLEN];
 	hentry.interface.hwaddress.toArray(dstaddr);
-	Match local_dst(RFMT_ETHERNET, dstaddr);
-	msg.add_match(local_dst);
+	//Match local_dst(RFMT_ETHERNET, dstaddr);
+	//msg.add_match(local_dst);
 
 	Action outport = Action(RFAT_OUTPUT, hentry.interface.port);
 
