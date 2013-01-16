@@ -37,6 +37,4 @@ void ofm_set_action(ofp_action_header* hdr, uint16_t type, uint16_t port, const 
 void ofm_set_command(ofp_flow_mod* ofm, enum ofp_flow_mod_command cmd);
 void ofm_set_command(ofp_flow_mod* ofm, uint16_t cmd, uint32_t id, uint16_t idle_to, uint16_t hard_to, uint16_t port);
 
-MSG create_config_msg(DATAPATH_CONFIG_OPERATION operation);
-
 #endif /* __RFOFMSG_H__ */
