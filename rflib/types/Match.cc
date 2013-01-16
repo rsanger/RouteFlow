@@ -21,6 +21,7 @@ std::string Match::type_to_string(uint8_t type) const {
         case RFMT_IPV6:         return "RFMT_IPV6";
         case RFMT_ETHERNET:     return "RFMT_ETHERNET";
         case RFMT_MPLS:         return "RFMT_MPLS";
+        case RFMT_IN_PORT:	return "RFMT_IN_PORT";
         default:                return "UNKNOWN_MATCH";
     }
 }
@@ -31,6 +32,7 @@ size_t Match::type_to_length(uint8_t type) {
         case RFMT_IPV6:         return sizeof(struct ip6_match);
         case RFMT_ETHERNET:     return IFHWADDRLEN;
         case RFMT_MPLS:         return sizeof(uint32_t);
+        case RFMT_IN_PORT:	return sizeof(uint16_t);
         default:                return 0;
     }
 }

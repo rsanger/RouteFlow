@@ -10,9 +10,9 @@ enum MatchType {
     RFMT_IPV4,           /* Match IPv4 Destination */
     RFMT_IPV6,           /* Match IPv6 Destination */
     RFMT_ETHERNET,       /* Match Ethernet Destination */
-    RFMT_MPLS            /* Match MPLS label_in */
+    RFMT_MPLS,           /* Match MPLS label_in */
+    RFMT_IN_PORT         /* Match incoming port (Unimplemented) */
     /* Future implementation */
-    //RFMT_IN_PORT,        /* Match incoming port (Unimplemented) */
     //RFMT_VLAN            /* Match incoming VLAN (Unimplemented) */
 };
 

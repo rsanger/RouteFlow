@@ -27,6 +27,11 @@ int add_match(ofp_flow_mod *ofm, Match& match) {
         case RFMT_ETHERNET:
             ofm_match_dl(ofm, OFPFW_DL_DST, 0, 0, (uint8_t *)match.getValue());
             break;
+        case RFMT_IN_PORT: {
+            uint8_t* v = (uint8_t *)match.getValue();
+            ofm_match_in(ofm, (v[0] << 8) | v[1] );
+            break;
+        }
         case RFMT_IPV6:
         case RFMT_MPLS:
         default: {
@@ -139,7 +144,8 @@ boost::shared_array<uint8_t> create_flow_mod(uint8_t mod,
     for (iter_mat = matches.begin(); iter_mat != matches.end(); ++iter_mat) {
         if (add_match(ofm, *iter_mat) != 0) {
             Match& match = *iter_mat;
-            VLOG_DBG(lg, "Could not serialise Match (type: %s)",
+            VLOG_DBG(lg, "Could not serialise Match (type: %d %s)",
+                     match.getType(),
                      match.type_to_string(match.getType()).c_str());
             error = -1;
             break;

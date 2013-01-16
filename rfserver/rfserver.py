@@ -172,7 +172,7 @@ class RFServer(RFProtocolFactory, IPC.IPCMessageProcessor):
 
                 # If we can't find an associated datapath for this RouteMod, 
                 # drop it.
-                if entry is None:
+                if entry is None:#or entry.get_status() == RFENTRY_IDLE_VM_PORT:
                     self.log.info("Received RouteMod destined for unknown "
                                   "datapath - Dropping (vm_id=%s, vm_port=%s)" 
                                   % (format_id(vm_id), vm_port))
@@ -195,13 +195,11 @@ class RFServer(RFProtocolFactory, IPC.IPCMessageProcessor):
             if match['type'] is RFMT_ETHERNET:
                 for entry in self.rftable.get_entries(vm_id=vm_id):
                     if action_output.get_value() != entry.dp_port:
-                        self.log.info(str(rm))
-                        self.log.info(str(entry))
-                        if entry.eth_addr is not None:
-                            # TODO: figure out whether I should be adding
-                            # matches for ports that are down..
+                        if entry.get_status() == RFENTRY_ACTIVE:
                             match_eth = Match.ETHERNET(entry.eth_addr)
                             rm.matches[i] = match_eth.to_dict()
+                            match_in_port = Match.IN_PORT(entry.dp_port)
+                            rm.add_match(match_in_port.to_dict())
                             self.ipc.send(RFSERVER_RFPROXY_CHANNEL, 
                                           str(entry.ct_id), rm)
 

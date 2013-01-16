@@ -4,9 +4,9 @@ from bson.binary import Binary
 RFMT_IPV4 = 0        # Match IPv4 Destination
 RFMT_IPV6 = 1        # Match IPv6 Destination
 RFMT_ETHERNET = 2    # Match Ethernet Destination
-RFMT_MPLS = 4        # Match MPLS label_in
+RFMT_MPLS = 3        # Match MPLS label_in
+RFMT_IN_PORT = 4     # Match incoming port (Unimplemented)
 # Future implementation
-#RFMT_IN_PORT = 5     # Match incoming port (Unimplemented)
 #RFMT_VLAN = 6        # Match incoming VLAN (Unimplemented)
 
 class Match(TLV):
@@ -30,6 +30,10 @@ class Match(TLV):
         return cls(RFMT_MPLS, label)
 
     @classmethod
+    def IN_PORT(cls, in_port):
+        return cls(RFMT_IN_PORT, in_port)
+
+    @classmethod
     def from_dict(cls, dic):
         ma = cls()
         ma._type = dic['type']
@@ -46,6 +50,8 @@ class Match(TLV):
             return ether_to_bin(value)
         elif matchType ==  RFMT_MPLS:
             return int_to_bin(value, 32)
+        elif matchType == RFMT_IN_PORT:
+            return int_to_bin(value, 16)
         else:
             return None
 
@@ -57,6 +63,8 @@ class Match(TLV):
         elif self._type == RFMT_ETHERNET:
             return bin_to_ether(self._value)
         elif self._type == RFMT_MPLS:
+            return bin_to_int(self._value)
+        elif self._type == RFMT_IN_PORT:
             return bin_to_int(self._value)
         else:
             return None
