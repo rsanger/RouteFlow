@@ -19,7 +19,6 @@
 #include "ipc/RFProtocol.h"
 #include "ipc/RFProtocolFactory.h"
 #include "OFInterface.hh"
-#include "rfofmsg.hh"
 #include "converter.h"
 #include "defs.h"
 
@@ -49,21 +48,6 @@ bool rfproxy::send_packet_out(uint64_t dp_id, uint32_t port, Buffer& data) {
         return FAILURE;
     else
         return SUCCESS;
-}
-
-// Flow installation methods
-void rfproxy::flow_config(uint64_t dp_id, uint32_t operation_id) {
-    MSG ofmsg = create_config_msg((DATAPATH_CONFIG_OPERATION) operation_id);
-    if (send_of_msg(dp_id, ofmsg) == SUCCESS)
-	    VLOG_INFO(lg,
-	        "ofp_flow_mod(config) was sent to datapath (dp_id=%0#"PRIx64")",
-	        dp_id);
-	else
-	    VLOG_INFO(lg,
-	        "Error sending ofp_flow_mod(config) to datapath (dp_id=%0#"PRIx64")",
-	        dp_id);
-
-    free(ofmsg);
 }
 
 // Event handlers
@@ -164,12 +148,7 @@ Disposition rfproxy::on_packet_in(const Event& e) {
 bool rfproxy::process(const string &from, const string &to,
                       const string &channel, IPCMessage& msg) {
     int type = msg.get_type();
-    if (type == DATAPATH_CONFIG) {
-        DatapathConfig *config = dynamic_cast<DatapathConfig*>(&msg);
-        flow_config(config->get_dp_id(),
-                    config->get_operation_id());
-    }
-    else if (type == ROUTE_MOD) {
+    if (type == ROUTE_MOD) {
         RouteMod* rmmsg = static_cast<RouteMod*>(&msg);
         boost::shared_array<uint8_t> ofmsg = create_flow_mod(rmmsg->get_mod(),
                                     rmmsg->get_matches(),
