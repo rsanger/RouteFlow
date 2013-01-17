@@ -1,36 +1,8 @@
-#include <stdio.h>
-#include <arpa/inet.h>
+#include <string.h>
 #include <net/ethernet.h>
-#include <iostream>
-#include <boost/shared_array.hpp>
-#include <cstring>
-#include <linux/if_ether.h>
 
 #include "defs.h"
-#include "MACAddress.h"
 #include "rfofmsg.hh"
-
-// TODO: this code is almost pure C, apart from the use of Boost and a few language constructs. Make it pure C.
-
-MSG msg_new(uint8_t* src, size_t size) {
-	MSG msg = (uint8_t*) malloc(size);
-	memcpy(msg, src, size);
-	return msg;
-}
-
-size_t msg_size(MSG msg) {
-    return ntohs(((uint16_t*) msg)[1]);
-}
-
-void msg_save(MSG msg, const char* fname) {
-    FILE *f = fopen(fname, "w");
-    fwrite(msg, sizeof(uint8_t), msg_size(msg), f);
-    fclose(f);
-}
-
-void msg_delete(MSG msg) {
-    free(msg);
-}
 
 /**
  * Initialise the FlowMod with default values
@@ -39,7 +11,7 @@ void msg_delete(MSG msg) {
  * size: size of the FlowMod structure
  */
 void ofm_init(ofp_flow_mod* ofm, size_t size) {
-	std::memset(ofm, 0, size);
+	memset(ofm, 0, size);
 
 	/* Open Flow Header. */
 	ofm->header.version = OFP_VERSION;
@@ -85,10 +57,10 @@ void ofm_match_dl(ofp_flow_mod* ofm, uint32_t match, uint16_t type,
         ofm->match.dl_type = htons(type);
     }
     if (match & OFPFW_DL_SRC) { /* Ethernet source address. */
-        std::memcpy(ofm->match.dl_src, src, OFP_ETH_ALEN);
+        memcpy(ofm->match.dl_src, src, OFP_ETH_ALEN);
     }
     if (match & OFPFW_DL_DST) { /* Ethernet destination address. */
-        std::memcpy(ofm->match.dl_dst, dst, OFP_ETH_ALEN);
+        memcpy(ofm->match.dl_dst, dst, OFP_ETH_ALEN);
     }
 }
 
@@ -123,8 +95,8 @@ void ofm_match_vlan(ofp_flow_mod* ofm, uint32_t match, uint16_t id,
  * match: Match type (OFPFW_NW_*)
  * proto: IP protocol to match
  * tos: DSCP bits to match
- * src: IPv4 source address
- * dst: IPv4 destination address
+ * src: IPv4 source address in network byte-order
+ * dst: IPv4 destination address in network byte-order
  */
 void ofm_match_nw(ofp_flow_mod* ofm, uint32_t match, uint8_t proto,
                   uint8_t tos, uint32_t src, uint32_t dst) {
@@ -151,8 +123,8 @@ void ofm_match_nw(ofp_flow_mod* ofm, uint32_t match, uint8_t proto,
  *
  * ofm: FlowMod to add match to
  * match: Match type (OFPFW_TP_*)
- * src: Transport source port
- * dst: Transport destination port
+ * src: Transport source port in host byte-order
+ * dst: Transport destination port in host byte-order
  */
 void ofm_match_tp(ofp_flow_mod* ofm, uint32_t match, uint16_t src,
                   uint16_t dst) {
@@ -170,7 +142,7 @@ void ofm_match_tp(ofp_flow_mod* ofm, uint32_t match, uint16_t src,
  * Initialises the given OpenFlow Action header with the given type and len
  */
 void ofm_action_init(ofp_action_header* hdr, uint16_t type, uint16_t len) {
-    std::memset((uint8_t *)hdr, 0, len);
+    memset((uint8_t *)hdr, 0, len);
     hdr->type = htons(type);
     hdr->len = htons(len);
 }
@@ -198,7 +170,7 @@ void ofm_set_action(ofp_action_header* hdr, uint16_t type, uint16_t port,
         ofp_action_dl_addr* action = (ofp_action_dl_addr*)hdr;
         ofm_action_init(hdr, type, sizeof(*action));
 
-        std::memcpy(&action->dl_addr, addr, OFP_ETH_ALEN);
+        memcpy(&action->dl_addr, addr, OFP_ETH_ALEN);
     }
 }
 

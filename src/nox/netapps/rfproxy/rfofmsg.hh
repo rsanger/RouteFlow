@@ -1,27 +1,10 @@
 #ifndef __RFOFMSG_H__
 #define __RFOFMSG_H__
 
-#include <stdio.h>
 #include <arpa/inet.h>
-#include <boost/shared_array.hpp>
-#include <cstring>
-#include <linux/if_ether.h>
-
 #include "openflow/openflow.h"
-#include "defs.h"
 
 #define OFP_BUFFER_NONE (0xffffffff)
-
-#define IPPROTO_OSPF    0x59
-#define IPADDR_RIPv2    (inet_addr("224.0.0.9"))
-#define TPORT_BGP       0x00B3
-#define TPORT_LDP       0x286
-
-typedef uint8_t* MSG;
-MSG msg_new(uint8_t* src, size_t size);
-size_t msg_size(MSG msg);
-void msg_save(MSG msg, const char* fname);
-void msg_delete(MSG msg);
 
 uint32_t ofp_get_mask(struct in_addr, int shift);
 uint32_t ofp_get_mask(uint8_t, int shift);
