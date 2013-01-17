@@ -2,6 +2,7 @@
 #define __RFOFMSG_H__
 
 #include <arpa/inet.h>
+
 #include "openflow/openflow.h"
 
 #define OFP_BUFFER_NONE (0xffffffff)
