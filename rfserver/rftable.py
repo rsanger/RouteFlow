@@ -11,6 +11,7 @@ RFENTRY_ACTIVE = 4
 
 RFENTRY = 0
 RFCONFIGENTRY = 1
+RFINTERNALENTRY = 2
 
 class MongoTableEntryFactory:
     @staticmethod
@@ -19,6 +20,8 @@ class MongoTableEntryFactory:
             return RFEntry()
         elif type_ == RFCONFIGENTRY:
             return RFConfigEntry()
+        elif type_ == RFINTERNALENTRY:
+            return RFInternalEntry()
 
 class MongoTable:
     def __init__(self, address, name, entry_type):
@@ -115,6 +118,19 @@ class RFConfig(MongoTable):
             return None
         return result[0]
 
+
+class RFInternal(MongoTable):
+    def __init__(self, ifile, address=MONGO_ADDRESS):
+        MongoTable.__init__(self, address, RFINTERNAL_NAME, RFINTERNALENTRY)
+        # TODO: perform validation of config
+        internalfile = file(ifile)
+        lines = internalfile.readlines()[1:]
+        entries = [line.strip("\n").split(",") for line in lines]
+        for (a, b, c, d, e, f, g, h) in entries:
+            self.set_entry(RFInternalEntry(int(a, 16), int(b), int(c, 16),
+                                           int(d), e, int(f, 16), int(g), h))
+            self.set_entry(RFInternalEntry(int(a, 16), int(b), int(f, 16), 
+                                           int(g), h, int(c, 16), int(d), e))
 
 # Convenience functions for packing/unpacking to a dict for BSON representation
 def load_from_dict(src, obj, attr):
@@ -242,6 +258,61 @@ class RFEntry:
         return data
         
         
+class RFInternalEntry:
+    def __init__(self, vm_id=None, ct_id=None, dp_id=None,  dp_port=None, 
+                 eth_addr=None, rem_id=None, rem_port=None, rem_eth_addr=None):
+        self.id = None
+        self.vm_id = vm_id
+        self.ct_id = ct_id
+        self.dp_id = dp_id
+        self.dp_port = dp_port
+        self.eth_addr = eth_addr
+        self.rem_id = rem_id
+        self.rem_port = rem_port
+        self.rem_eth_addr = rem_eth_addr
+        
+    def __str__(self):
+        return "vm_id: %s ct_id: %s "\
+               "dp_id: %s dp_port: %s eth_addr: %s"\
+               "rem_id: %s rem_port: %s rem_addr: %s"\
+               % (str(self.vm_id), str(self.ct_id),
+                  str(self.dp_id), str(self.dp_port), self.eth_addr,
+                  str(self.rem_id), str(self.rem_port), self.rem_eth_addr)
+
+    def get_status(self):
+       return RFENTRY_ACTIVE 
+                                
+    def from_dict(self, data):
+        for k, v in data.items():
+            if str(v) is "":
+                data[k] = None
+            elif k != "_id" and not k.endswith("eth_addr"): 
+                data[k] = int(v)
+        self.id = data["_id"]
+        load_from_dict(data, self, "vm_id")
+        load_from_dict(data, self, "ct_id")
+        load_from_dict(data, self, "dp_id")
+        load_from_dict(data, self, "dp_port")
+        load_from_dict(data, self, "eth_addr")
+        load_from_dict(data, self, "rem_id")
+        load_from_dict(data, self, "rem_port")
+        load_from_dict(data, self, "rem_eth_addr")
+
+
+    def to_dict(self):
+        data = {}
+        if self.id is not None:
+            data["_id"] = self.id
+        pack_into_dict(data, self, "vm_id")
+        pack_into_dict(data, self, "ct_id")
+        pack_into_dict(data, self, "dp_id")
+        pack_into_dict(data, self, "dp_port")
+        pack_into_dict(data, self, "eth_addr")
+        pack_into_dict(data, self, "rem_id")
+        pack_into_dict(data, self, "rem_port")
+        pack_into_dict(data, self, "rem_eth_addr")
+        return data
+
 class RFConfigEntry:
     def __init__(self, vm_id=None, vm_port=None, ct_id=None, dp_id=None,
                  dp_port=None):

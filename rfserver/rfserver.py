@@ -22,9 +22,10 @@ REGISTER_IDLE = 0
 REGISTER_ASSOCIATED = 1
 
 class RFServer(RFProtocolFactory, IPC.IPCMessageProcessor):
-    def __init__(self, configfile):
+    def __init__(self, configfile, internalfile):
         self.rftable = RFTable()
         self.config = RFConfig(configfile)
+        self.internal = RFInternal(internalfile)
         self.configured_rfvs = False
         # Logging
         self.log = logging.getLogger("rfserver")
@@ -159,7 +160,7 @@ class RFServer(RFProtocolFactory, IPC.IPCMessageProcessor):
     # and sends to the corresponding controller
     def register_route_mod(self, rm):
         vm_id = rm.get_id()
-        action_output = None
+
         # Find the output action
         for i, action in enumerate(rm.actions):
             if action['type'] is RFAT_OUTPUT:
@@ -172,7 +173,7 @@ class RFServer(RFProtocolFactory, IPC.IPCMessageProcessor):
 
                 # If we can't find an associated datapath for this RouteMod, 
                 # drop it.
-                if entry is None:#or entry.get_status() == RFENTRY_IDLE_VM_PORT:
+                if entry is None or entry.get_status() == RFENTRY_IDLE_VM_PORT:
                     self.log.info("Received RouteMod destined for unknown "
                                   "datapath - Dropping (vm_id=%s, vm_port=%s)" 
                                   % (format_id(vm_id), vm_port))
@@ -182,26 +183,43 @@ class RFServer(RFProtocolFactory, IPC.IPCMessageProcessor):
                 action_output.set_value(entry.dp_port)
                 rm.set_id(int(entry.dp_id))
                 rm.actions[i] = action_output.to_dict()
-                break
+                entries = self.rftable.get_entries(dp_id=entry.dp_id,
+                                                   ct_id=entry.ct_id)
+                entries.extend(self.internal.get_entries(dp_id=entry.dp_id,
+                                                         ct_id=entry.ct_id))
+                self._send_rm_with_matches(rm, entry.dp_port, entries)
+                
+                remote_dps = self.internal.get_entries(ct_id=entry.ct_id, 
+                                                       rem_id=entry.dp_id)
+                for r in remote_dps:
+                    rm.set_id(int(r.dp_id))
+                    src_act = Action.SET_ETH_SRC(r.eth_addr).to_dict()
+                    dst_act = Action.SET_ETH_DST(r.rem_eth_addr).to_dict()
+                    out_act = Action.OUTPUT(r.dp_port).to_dict()
+                    rm.set_actions([src_act, dst_act, out_act])
+                    entries = self.rftable.get_entries(dp_id=r.dp_id,
+                                                       ct_id=r.ct_id)
+                    self._send_rm_with_matches(rm, r.dp_port, entries)
 
-        if action_output is None:
-            # If no output action is found, don't forward the routemod.
-            self.log.info("Received RouteMod with no Output Port - Dropping "
+                return
+
+        # If no output action is found, don't forward the routemod.
+        self.log.info("Received RouteMod with no Output Port - Dropping "
                           "(vm_id=%s, vm_port=%s)" % (format_id(vm_id), 
                                                       vm_port))
-            return
         
-        #for i, match in enumerate(rm.matches):
-        #    if match['type'] is RFMT_ETHERNET:
-        for entry in self.rftable.get_entries(vm_id=vm_id):
-             if action_output.get_value() != entry.dp_port:
-                 if entry.get_status() == RFENTRY_ACTIVE:
-                     match_eth = Match.ETHERNET(entry.eth_addr)
-                     rm.add_match(match_eth.to_dict())
-                     match_in_port = Match.IN_PORT(entry.dp_port)
-                     rm.add_match(match_in_port.to_dict())
-                     self.ipc.send(RFSERVER_RFPROXY_CHANNEL, 
-                                   str(entry.ct_id), rm)
+    def _send_rm_with_matches(self, rm, out_port, entries):
+        #send entries matching external ports
+        for entry in entries:
+            if out_port != entry.dp_port:
+                if entry.get_status() == RFENTRY_ACTIVE: 
+                    match_eth = Match.ETHERNET(entry.eth_addr)
+                    rm.add_match(match_eth.to_dict())
+                    match_in_port = Match.IN_PORT(entry.dp_port)
+                    rm.add_match(match_in_port.to_dict())
+                    self.ipc.send(RFSERVER_RFPROXY_CHANNEL, 
+                                  str(entry.ct_id), rm)
+                    rm.set_matches(rm.get_matches()[:-2])
 
     # DatapathPortRegister methods
     def register_dp_port(self, ct_id, dp_id, dp_port):
@@ -317,10 +335,11 @@ class RFServer(RFProtocolFactory, IPC.IPCMessageProcessor):
                            format_id(entry.vs_id), entry.vs_port))
 
 
-if len(sys.argv) == 2:
+if len(sys.argv) == 3:
     configfile = sys.argv[1]
+    internalfile = sys.argv[2]
     try:
-        RFServer(configfile)
+        RFServer(configfile, internalfile)
     except IOError:
         sys.exit("Error opening file: {}".format(configfile))
 else:
