@@ -27,7 +27,7 @@ int add_match(ofp_flow_mod *ofm, const Match& match) {
             ofm_match_dl(ofm, OFPFW_DL_DST, 0, 0, match.getValue());
             break;
         case RFMT_IN_PORT: {
-            ofm_match_in(ofm, match.getValue());
+            ofm_match_in(ofm, match.getUint32());
             break;
         }
         case RFMT_IPV6:

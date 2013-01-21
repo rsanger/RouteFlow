@@ -143,10 +143,10 @@ class RFServer(RFProtocolFactory, IPC.IPCMessageProcessor):
                                                        rem_id=entry.dp_id)
                 for r in remote_dps:
                     rm.set_id(int(r.dp_id))
-                    src_act = Action.SET_ETH_SRC(r.eth_addr).to_dict()
-                    dst_act = Action.SET_ETH_DST(r.rem_eth_addr).to_dict()
-                    out_act = Action.OUTPUT(r.dp_port).to_dict()
-                    rm.set_actions([src_act, dst_act, out_act])
+                    rm.set_actions(None)
+                    rm.add_action(Action.SET_ETH_SRC(r.eth_addr))
+                    rm.add_action(Action.SET_ETH_DST(r.rem_eth_addr))
+                    rm.add_action(Action.OUTPUT(r.dp_port))
                     entries = self.rftable.get_entries(dp_id=r.dp_id,
                                                        ct_id=r.ct_id)
                     self._send_rm_with_matches(rm, r.dp_port, entries)
@@ -164,9 +164,9 @@ class RFServer(RFProtocolFactory, IPC.IPCMessageProcessor):
             if out_port != entry.dp_port:
                 if entry.get_status() == RFENTRY_ACTIVE: 
                     match_eth = Match.ETHERNET(entry.eth_addr)
-                    rm.add_match(match_eth.to_dict())
+                    rm.add_match(match_eth)
                     match_in_port = Match.IN_PORT(entry.dp_port)
-                    rm.add_match(match_in_port.to_dict())
+                    rm.add_match(match_in_port)
                     self.ipc.send(RFSERVER_RFPROXY_CHANNEL, 
                                   str(entry.ct_id), rm)
                     rm.set_matches(rm.get_matches()[:-2])
