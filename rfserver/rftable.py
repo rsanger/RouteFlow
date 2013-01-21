@@ -126,11 +126,13 @@ class RFInternal(MongoTable):
         internalfile = file(ifile)
         lines = internalfile.readlines()[1:]
         entries = [line.strip("\n").split(",") for line in lines]
-        for (a, b, c, d, e, f, g, h) in entries:
+        for (a, b, c, d, e, f, g, h, i) in entries:
             self.set_entry(RFInternalEntry(int(a, 16), int(b), int(c, 16),
-                                           int(d), e, int(f, 16), int(g), h))
-            self.set_entry(RFInternalEntry(int(a, 16), int(b), int(f, 16), 
-                                           int(g), h, int(c, 16), int(d), e))
+                                           int(d), e, int(f), int(g, 16), 
+                                           int(h), i))
+            self.set_entry(RFInternalEntry(int(a, 16), int(f), int(g, 16), 
+                                           int(h), i, int(b), int(c, 16), 
+                                           int(d), e))
 
 # Convenience functions for packing/unpacking to a dict for BSON representation
 def load_from_dict(src, obj, attr):
@@ -260,24 +262,27 @@ class RFEntry:
         
 class RFInternalEntry:
     def __init__(self, vm_id=None, ct_id=None, dp_id=None,  dp_port=None, 
-                 eth_addr=None, rem_id=None, rem_port=None, rem_eth_addr=None):
+                 eth_addr=None, rem_ct=None, rem_id=None, rem_port=None, 
+                 rem_eth_addr=None):
         self.id = None
         self.vm_id = vm_id
         self.ct_id = ct_id
         self.dp_id = dp_id
         self.dp_port = dp_port
         self.eth_addr = eth_addr
+        self.rem_ct = ct_id
         self.rem_id = rem_id
         self.rem_port = rem_port
         self.rem_eth_addr = rem_eth_addr
         
     def __str__(self):
-        return "vm_id: %s ct_id: %s "\
-               "dp_id: %s dp_port: %s eth_addr: %s"\
-               "rem_id: %s rem_port: %s rem_addr: %s"\
+        return "vm_id: %s "\
+               "ct_id: %s dp_id: %s dp_port: %s eth_addr: %s"\
+               "rem_ct: %s rem_id: %s rem_port: %s rem_addr: %s"\
                % (str(self.vm_id), str(self.ct_id),
                   str(self.dp_id), str(self.dp_port), self.eth_addr,
-                  str(self.rem_id), str(self.rem_port), self.rem_eth_addr)
+                  str(self.rem_ct), str(self.rem_id), str(self.rem_port), 
+                  self.rem_eth_addr)
 
     def get_status(self):
        return RFENTRY_ACTIVE 
@@ -294,6 +299,7 @@ class RFInternalEntry:
         load_from_dict(data, self, "dp_id")
         load_from_dict(data, self, "dp_port")
         load_from_dict(data, self, "eth_addr")
+        load_from_dict(data, self, "rem_ct")
         load_from_dict(data, self, "rem_id")
         load_from_dict(data, self, "rem_port")
         load_from_dict(data, self, "rem_eth_addr")
@@ -308,6 +314,7 @@ class RFInternalEntry:
         pack_into_dict(data, self, "dp_id")
         pack_into_dict(data, self, "dp_port")
         pack_into_dict(data, self, "eth_addr")
+        pack_into_dict(data, self, "rem_ct")
         pack_into_dict(data, self, "rem_id")
         pack_into_dict(data, self, "rem_port")
         pack_into_dict(data, self, "rem_eth_addr")
