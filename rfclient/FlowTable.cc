@@ -14,6 +14,7 @@
 using namespace std;
 
 #define FULL_IPV4_MASK ((in_addr){ 0xffffffff })
+#define FULL_CIDR_MASK 32
 #define FULL_IPV6_MASK ((in6_addr){{{ 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff }}})
 #define EMPTY_MAC_ADDRESS "00:00:00:00:00:00"
 
@@ -387,12 +388,13 @@ void FlowTable::addFlowToHw(const RouteEntry& rentry) {
 	dstMac.toArray(dstaddr);
 	Action setdldst = Action(RFAT_SET_ETH_DST, dstaddr);
 
-	//Match local_dst(RFMT_ETHERNET, srcaddr);
-	//msg.add_match(local_dst);
-
 	msg.add_action(setdlsrc);
 	msg.add_action(setdldst);
 	msg.add_action(outport);
+
+	uint16_t pri = DEFAULT_PRIORITY + rentry.netmask.toCIDRMask();
+	Option priority(RFOT_PRIORITY, pri);
+	msg.add_option(priority);
 
 	// Send
 	FlowTable::ipc->send(RFCLIENT_RFSERVER_CHANNEL, RFSERVER_ID, msg);
@@ -407,6 +409,7 @@ void FlowTable::addFlowToHw(const HostEntry& hentry) {
 	msg.set_id(FlowTable::vm_id);
 
 	boost::scoped_ptr<Match> ipdst;
+	boost::scoped_ptr<Option> idle;
 
 	if(hentry.address.getVersion() == IPV6) {
 		ip6_match_t ipmatch;
@@ -415,6 +418,10 @@ void FlowTable::addFlowToHw(const HostEntry& hentry) {
 
 		ipdst.reset(new Match(RFMT_IPV6, &ipmatch));
 	} else {
+		// RFC1122 specifies that ARP entries should timeout in ~60 seconds
+		idle.reset(new Option(RFOT_IDLE_TIMEOUT, (uint16_t)60));
+		msg.add_option(*(idle.get()));
+
 		ip_match_t ipmatch;
 		ipmatch.addr = *((in_addr*) hentry.address.toInAddr());
 		ipmatch.mask = FULL_IPV4_MASK;
@@ -434,12 +441,13 @@ void FlowTable::addFlowToHw(const HostEntry& hentry) {
 	hentry.hwaddress.toArray(dstaddr);
 	Action setdldst = Action(RFAT_SET_ETH_DST, dstaddr);
 
-	//Match local_dst(RFMT_ETHERNET, srcaddr);
-	//msg.add_match(local_dst);
-
 	msg.add_action(setdlsrc);
 	msg.add_action(setdldst);
 	msg.add_action(outport);
+
+	uint16_t pri = DEFAULT_PRIORITY + FULL_CIDR_MASK;
+	Option priority(RFOT_PRIORITY, pri);
+	msg.add_option(priority);
 
     // Send
     FlowTable::ipc->send(RFCLIENT_RFSERVER_CHANNEL, RFSERVER_ID, msg);
@@ -473,12 +481,14 @@ void FlowTable::delFlowFromHw(const RouteEntry& rentry) {
 
 	uint8_t dstaddr[IFHWADDRLEN];
 	rentry.interface.hwaddress.toArray(dstaddr);
-	//Match local_dst(RFMT_ETHERNET, dstaddr);
-	//msg.add_match(local_dst);
 
 	Action outport = Action(RFAT_OUTPUT, rentry.interface.port);
 
 	msg.add_action(outport);
+
+	uint16_t pri = DEFAULT_PRIORITY + rentry.netmask.toCIDRMask();
+	Option priority(RFOT_PRIORITY, pri);
+	msg.add_option(priority);
 
     // Send
     FlowTable::ipc->send(RFCLIENT_RFSERVER_CHANNEL, RFSERVER_ID, msg);
@@ -510,12 +520,14 @@ void FlowTable::delFlowFromHw(const HostEntry& hentry) {
 
 	uint8_t dstaddr[IFHWADDRLEN];
 	hentry.interface.hwaddress.toArray(dstaddr);
-	//Match local_dst(RFMT_ETHERNET, dstaddr);
-	//msg.add_match(local_dst);
 
 	Action outport = Action(RFAT_OUTPUT, hentry.interface.port);
 
 	msg.add_action(outport);
+
+	uint16_t pri = DEFAULT_PRIORITY + FULL_CIDR_MASK;
+	Option priority(RFOT_PRIORITY, pri);
+	msg.add_option(priority);
 
     // Send
     FlowTable::ipc->send(RFCLIENT_RFSERVER_CHANNEL, RFSERVER_ID, msg);

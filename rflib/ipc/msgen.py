@@ -15,6 +15,8 @@ typesMap = {
 "match[]": "std::vector<Match>",
 "action": "Action&",
 "action[]": "std::vector<Action>",
+"option": "Option&",
+"option[]": "std::vector<Option>",
 }
 
 defaultValues = {
@@ -27,6 +29,7 @@ defaultValues = {
 "string": "\"\"",
 "match[]": "std::vector<Match>()",
 "action[]": "std::vector<Action>()",
+"option[]": "std::vector<Option>()",
 }
 
 exportType = {
@@ -39,6 +42,7 @@ exportType = {
 "string": "{0}",
 "match[]": "MatchList::to_BSON({0})",
 "action[]": "ActionList::to_BSON({0})",
+"option[]": "OptionList::to_BSON({0})",
 }
 
 importType = {
@@ -51,6 +55,7 @@ importType = {
 "string": "{0}.String()",
 "match[]": "MatchList::to_vector({0}.Array())",
 "action[]": "ActionList::to_vector({0}.Array())",
+"option[]": "OptionList::to_vector({0}.Array())",
 }
 
 # Python
@@ -64,6 +69,7 @@ pyDefaultValues = {
 "string": "\"\"",
 "match[]": "list()",
 "action[]": "list()",
+"option[]": "list()",
 }
 
 pyExportType = {
@@ -76,6 +82,7 @@ pyExportType = {
 "string": "{0}",
 "match[]": "{0}",
 "action[]": "{0}",
+"option[]": "{0}",
 }
 
 pyImportType = {
@@ -88,6 +95,7 @@ pyImportType = {
 "string": "str({0})",
 "match[]": "list({0})",
 "action[]": "list({0})",
+"option[]": "list({0})",
 }
 
 def convmsgtype(string):
@@ -145,6 +153,7 @@ def genH(messages, fname):
     g.addLine("#include \"converter.h\"")
     g.addLine("#include \"Action.hh\"")
     g.addLine("#include \"Match.hh\"")
+    g.addLine("#include \"Option.hh\"")
     g.blankLine();
     enum = "enum {\n\t"
     enum += ",\n\t".join([convmsgtype(name) for name, msg in messages]) 
@@ -259,7 +268,10 @@ def genCPP(messages, fname):
         g.addLine("mongo::BSONObjBuilder _b;")
         for t, f in msg:
             value = "get_{0}()".format(f)
-            g.addLine("_b.append(\"{0}\", {1});".format(f, exportType[t].format(value)))
+            if t[-2:] == "[]":
+                g.addLine("_b.appendArray(\"{0}\", {1});".format(f, exportType[t].format(value)))
+            else:
+                g.addLine("_b.append(\"{0}\", {1});".format(f, exportType[t].format(value)))
         g.addLine("mongo::BSONObj o = _b.obj();")
         g.addLine("char* data = new char[o.objsize()];")
         g.addLine("memcpy(data, o.objdata(), o.objsize());")
@@ -391,7 +403,7 @@ def genPy(messages, fname):
                 t2 = t[0:-2]
                 g.addLine("def add_{0}(self, {0}):".format(t2))
                 g.increaseIndent()
-                g.addLine("self.{0}.append({1})".format(f, t2))
+                g.addLine("self.{0}.append({1}.to_dict())".format(f, t2))
                 g.decreaseIndent()
                 g.blankLine();
 

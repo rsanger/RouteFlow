@@ -24,14 +24,11 @@
 #include "config.h"
 #include "vlog.hh"
 
-#include "types/Action.hh"
 #include "types/Match.hh"
-
-namespace rfproxy {
+#include "types/Action.hh"
+#include "types/Option.hh"
 
 boost::shared_array<uint8_t> create_flow_mod(uint8_t mod,
-            std::vector<Match> matches, std::vector<Action> actions);
-
-} // namespace rfproxy
+            std::vector<Match>, std::vector<Action>, std::vector<Option>);
 
 #endif /*__OFINTERFACE_HH__ */

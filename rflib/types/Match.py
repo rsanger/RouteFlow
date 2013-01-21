@@ -1,13 +1,13 @@
 from TLV import *
 from bson.binary import Binary
 
-RFMT_IPV4 = 0        # Match IPv4 Destination
-RFMT_IPV6 = 1        # Match IPv6 Destination
-RFMT_ETHERNET = 2    # Match Ethernet Destination
-RFMT_MPLS = 3        # Match MPLS label_in
-RFMT_IN_PORT = 4     # Match incoming port (Unimplemented)
-# Future implementation
-#RFMT_VLAN = 6        # Match incoming VLAN (Unimplemented)
+RFMT_IPV4 = 1        # Match IPv4 Destination
+RFMT_IPV6 = 2        # Match IPv6 Destination
+RFMT_ETHERNET = 3    # Match Ethernet Destination
+RFMT_MPLS = 4        # Match MPLS label_in
+RFMT_IN_PORT = 254   # Match incoming port
+# Optional
+RFMT_VLAN = 255      # Match incoming VLAN (Unimplemented)
 
 class Match(TLV):
     def __init__(self, matchType=None, value=None):
@@ -30,8 +30,12 @@ class Match(TLV):
         return cls(RFMT_MPLS, label)
 
     @classmethod
-    def IN_PORT(cls, in_port):
-        return cls(RFMT_IN_PORT, in_port)
+    def IN_PORT(cls, port):
+        return cls(RFMT_IN_PORT, port)
+
+    @classmethod
+    def VLAN(cls, tag):
+        return cls(RFMT_VLAN, tag)
 
     @classmethod
     def from_dict(cls, dic):
@@ -41,6 +45,12 @@ class Match(TLV):
         return ma
 
     @staticmethod
+    def optional(optionType):
+        if optionType in (RFMT_IN_PORT, RFMT_VLAN):
+            return true
+        return false
+
+    @staticmethod
     def type_to_bin(matchType, value):
         if matchType == RFMT_IPV4:
             return inet_pton(AF_INET, value[0]) + inet_pton(AF_INET, value[1])
@@ -48,9 +58,9 @@ class Match(TLV):
             return inet_pton(AF_INET6, value[0]) + inet_pton(AF_INET6, value[1])
         elif matchType == RFMT_ETHERNET:
             return ether_to_bin(value)
-        elif matchType ==  RFMT_MPLS:
+        elif matchType in (RFMT_MPLS, RFMT_IN_PORT):
             return int_to_bin(value, 32)
-        elif matchType == RFMT_IN_PORT:
+        elif matchType == RFMT_VLAN:
             return int_to_bin(value, 16)
         else:
             return None
@@ -62,9 +72,7 @@ class Match(TLV):
             return (inet_ntop(AF_INET6, self._value[:16]), inet_ntop(AF_INET6, self._value[16:]))
         elif self._type == RFMT_ETHERNET:
             return bin_to_ether(self._value)
-        elif self._type == RFMT_MPLS:
-            return bin_to_int(self._value)
-        elif self._type == RFMT_IN_PORT:
+        elif self._type in (RFMT_MPLS, RFMT_IN_PORT, RFMT_VLAN):
             return bin_to_int(self._value)
         else:
             return None

@@ -2,15 +2,15 @@ from TLV import *
 from bson.binary import Binary
 
 # Action Type Variables ('Enum')
-RFAT_OUTPUT = 0         # Output port
-RFAT_SET_ETH_SRC = 1    # Ethernet source address
-RFAT_SET_ETH_DST = 2    # Ethernet destination address
-RFAT_PUSH_MPLS = 3      # Push MPLS label
-RFAT_POP_MPLS = 4       # Pop MPLS label
-RFAT_SWAP_MPLS = 5      # Swap MPLS label
-# Future implementation
-#RFAT_DROP = 6           # Drop packet (Unimplemented)
-#RFAT_SFLOW = 7          # Generate SFlow messages (Unimplemented)
+RFAT_OUTPUT = 1         # Output port
+RFAT_SET_ETH_SRC = 2    # Ethernet source address
+RFAT_SET_ETH_DST = 3    # Ethernet destination address
+RFAT_PUSH_MPLS = 4      # Push MPLS label
+RFAT_POP_MPLS = 5       # Pop MPLS label
+RFAT_SWAP_MPLS = 6      # Swap MPLS label
+# Optional
+RFAT_DROP = 254         # Drop packet (Unimplemented)
+RFAT_SFLOW = 255        # Generate SFlow messages (Unimplemented)
 
 class Action(TLV):
     def __init__(self, actionType=None, value=None):
@@ -41,6 +41,14 @@ class Action(TLV):
         return cls(RFAT_SWAP_MPLS, label)
 
     @classmethod
+    def DROP(cls):
+        return cls(RFAT_DROP, None)
+
+    @classmethod
+    def POP_SFLOW(cls):
+        return cls(RFAT_POP_SFLOW, None)
+
+    @classmethod
     def from_dict(cls, dic):
         ac = cls()
         ac._type = dic['type']
@@ -48,12 +56,18 @@ class Action(TLV):
         return ac
 
     @staticmethod
+    def optional(optionType):
+        if optionType in (RFAT_DROP, RFAT_SFLOW):
+            return true
+        return false
+
+    @staticmethod
     def type_to_bin(actionType, value):
         if actionType in (RFAT_OUTPUT, RFAT_PUSH_MPLS, RFAT_SWAP_MPLS):
             return int_to_bin(value, 32)
         elif actionType in (RFAT_SET_ETH_SRC, RFAT_SET_ETH_DST):
             return ether_to_bin(value)
-        elif actionType == RFAT_POP_MPLS:
+        elif actionType in (RFAT_POP_MPLS, RFAT_DROP, RFAT_SFLOW):
             return ''
         else:
             return None
@@ -63,7 +77,7 @@ class Action(TLV):
             return bin_to_int(self._value)
         elif self._type in (RFAT_SET_ETH_SRC, RFAT_SET_ETH_DST):
             return bin_to_ether(self._value)
-        elif self._type == RFAT_POP_MPLS:
+        elif self._type in (RFAT_POP_MPLS, RFAT_DROP, RFAT_SFLOW):
             return None
         else:
             return None

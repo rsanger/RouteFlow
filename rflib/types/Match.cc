@@ -1,28 +1,68 @@
 #include <boost/scoped_array.hpp>
 #include "Match.hh"
 
-Match::Match(TLV *tlv) : TLV(tlv) { }
+Match::Match(const Match& other) : TLV(other) { }
 
-Match::Match(MatchType type, const uint8_t *value)
+Match::Match(MatchType type, boost::shared_array<uint8_t> value)
+    : TLV(type, type_to_length(type), value) { }
+
+Match::Match(MatchType type, const uint8_t* value)
     : TLV(type, type_to_length(type), value) { }
 
 Match::Match(MatchType type, const uint32_t value)
     : TLV(type, type_to_length(type), value) { }
 
-Match::Match(MatchType type, const ip_match_t *ip)
-    : TLV(type, type_to_length(type), (const uint8_t *)ip) { }
+Match::Match(MatchType type, const ip_match_t* ip)
+    : TLV(type, type_to_length(type), (const uint8_t*)ip) { }
 
-Match::Match(MatchType type, const ip6_match_t *ip)
-    : TLV(type, type_to_length(type), (const uint8_t *)ip) { }
+Match::Match(MatchType type, const ip6_match_t* ip)
+    : TLV(type, type_to_length(type), (const uint8_t*)ip) { }
 
-std::string Match::type_to_string(uint8_t type) const {
-    switch(type) {
+Match& Match::operator=(const Match& other) {
+    if (this != &other) {
+        this->init(other.getType(), other.getLength(), other.getValue());
+    }
+    return *this;
+}
+
+bool Match::operator==(const Match& other) {
+    return (this->getType() == other.getType() and
+            (memcmp(other.getValue(), this->getValue(), this->length) == 0));
+}
+
+const ip_match* Match::getIPv4() const {
+    if (this->type != RFMT_IPV4) {
+        return NULL;
+    }
+    return reinterpret_cast<const ip_match*>(this->getValue());
+}
+
+const ip6_match* Match::getIPv6() const {
+    if (this->type != RFMT_IPV6) {
+        return NULL;
+    }
+    return reinterpret_cast<const ip6_match*>(this->getValue());
+}
+
+std::string Match::type_to_string() const {
+    switch (this->type) {
         case RFMT_IPV4:         return "RFMT_IPV4";
         case RFMT_IPV6:         return "RFMT_IPV6";
         case RFMT_ETHERNET:     return "RFMT_ETHERNET";
         case RFMT_MPLS:         return "RFMT_MPLS";
-        case RFMT_IN_PORT:	return "RFMT_IN_PORT";
+        case RFMT_IN_PORT:      return "RFMT_IN_PORT";
+        case RFMT_VLAN:         return "RFMT_VLAN";
         default:                return "UNKNOWN_MATCH";
+    }
+}
+
+bool Match::optional() {
+    switch (this->type) {
+        //case RFMT_IN_PORT:
+        case RFMT_VLAN:
+            return true;
+        default:
+            return false;
     }
 }
 
@@ -31,77 +71,55 @@ size_t Match::type_to_length(uint8_t type) {
         case RFMT_IPV4:         return sizeof(struct ip_match);
         case RFMT_IPV6:         return sizeof(struct ip6_match);
         case RFMT_ETHERNET:     return IFHWADDRLEN;
-        case RFMT_MPLS:         return sizeof(uint32_t);
-        case RFMT_IN_PORT:	return sizeof(uint16_t);
+        case RFMT_VLAN:         return sizeof(uint16_t);
+        case RFMT_MPLS:
+        case RFMT_IN_PORT:
+            return sizeof(uint32_t);
         default:                return 0;
     }
 }
 
 /**
- * Serialises the Match to BSON in the following format:
- * {
- *   "type": (int),
- *   "value": (binary)
- * }
+ * Determine what byte-order the type is stored in internally
  */
-mongo::BSONObj Match::to_BSON() const {
-    uint8_t arr[this->length];
-    const uint8_t* value = getValue();
-    mongo::BSONObjBuilder builder;
-
-    switch (this->type) {
-        case RFMT_MPLS: {
-            uint32_t label = htonl(*(uint32_t*)value);
-            memcpy(arr, &label, this->length);
-            value = arr;
-            break;
-        }
+byte_order Match::type_to_byte_order(uint8_t type) {
+    switch (type) {
+        case RFMT_IPV4:
+        case RFMT_IPV6:
+        case RFMT_ETHERNET:
+            return ORDER_NETWORK;
+        default:
+            return ORDER_HOST;
     }
+}
 
-    builder.append("type", this->type);
-    builder.appendBinData("value", this->length, mongo::BinDataGeneral, value);
-    return builder.obj();
+mongo::BSONObj Match::to_BSON() const {
+    byte_order order = type_to_byte_order(type);
+    return TLV::TLV_to_BSON(this, order);
 }
 
 /**
- * Constructs a new TLV object based on the given BSONObj.
+ * Constructs a new TLV object based on the given BSONObj. Converts values
+ * formatted in network byte-order to host byte-order.
  *
  * It is the caller's responsibility to free the returned object. If the given
  * BSONObj is not a valid TLV, this method returns NULL.
  */
 Match* Match::from_BSON(const mongo::BSONObj bson) {
-    const mongo::BSONElement &btype = bson["type"];
-    const mongo::BSONElement &bvalue = bson["value"];
-
-    if (btype.type() != mongo::NumberInt)
+    MatchType type = (MatchType)TLV::type_from_BSON(bson);
+    if (type == 0)
         return NULL;
 
-    if (bvalue.type() != mongo::BinData)
+    byte_order order = type_to_byte_order(type);
+    boost::shared_array<uint8_t> value = TLV::value_from_BSON(bson, order);
+
+    if (value.get() == NULL)
         return NULL;
-
-    MatchType type = (MatchType)btype.Int();
-    int len = bvalue.valuesize();
-    const uint8_t *value = (uint8_t*)bvalue.binData(len);
-
-    boost::scoped_array<uint8_t> arr(new uint8_t[type_to_length(type)]);
-    switch (type) {
-        case RFMT_MPLS: {
-            uint32_t label = ntohl(*(uint32_t*)value);
-            memcpy(arr.get(), &label, type_to_length(type));
-            value = arr.get();
-            break;
-        }
-        default:
-            break;
-    }
 
     return new Match(type, value);
 }
 
 namespace MatchList {
-    /**
-     * Builds a BSON array based on the given vector of matches.
-     */
     mongo::BSONArray to_BSON(const std::vector<Match> list) {
         std::vector<Match>::const_iterator iter;
         mongo::BSONArrayBuilder builder;
@@ -116,10 +134,11 @@ namespace MatchList {
     /**
      * Returns a vector of Matches extracted from 'bson'. 'bson' should be an
      * array of bson-encoded Match objects formatted as follows:
-     * {
+     * [{
      *   "type": (int),
      *   "value": (binary)
-     * }
+     * },
+     * ...]
      *
      * If the given 'bson' is not an array, the returned vector will be empty.
      * If any matches in the array are invalid, they will not be added to the
@@ -130,7 +149,7 @@ namespace MatchList {
         std::vector<Match> list;
 
         for (iter = array.begin(); iter != array.end(); ++iter) {
-            Match *match = Match::from_BSON(iter->Obj());
+            Match* match = Match::from_BSON(iter->Obj());
 
             if (match != NULL) {
                 list.push_back(*match);

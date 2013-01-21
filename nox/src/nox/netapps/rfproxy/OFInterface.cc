@@ -1,9 +1,8 @@
 #include <net/ethernet.h>
 
-#include "OFInterface.hh"
+#include "defs.h"
 #include "openflow/rfofmsg.h"
-
-namespace rfproxy {
+#include "OFInterface.hh"
 
 static vigil::Vlog_module lg("rfproxy");
 
@@ -12,12 +11,12 @@ static vigil::Vlog_module lg("rfproxy");
  *
  * Returns -1 on failure.
  */
-int add_match(ofp_flow_mod *ofm, Match& match) {
+int add_match(ofp_flow_mod *ofm, const Match& match) {
     int error = 0;
 
-    switch(match.getType()) {
+    switch (match.getType()) {
         case RFMT_IPV4: {
-            ip_match *im = (ip_match *)match.getValue();
+            const ip_match *im = match.getIPv4();
             uint32_t mask = ofp_get_mask(im->mask, OFPFW_NW_DST_SHIFT);
 
             ofm_match_dl(ofm, OFPFW_DL_TYPE, ETHERTYPE_IP, 0, 0);
@@ -25,20 +24,18 @@ int add_match(ofp_flow_mod *ofm, Match& match) {
             break;
         }
         case RFMT_ETHERNET:
-            ofm_match_dl(ofm, OFPFW_DL_DST, 0, 0, (uint8_t *)match.getValue());
+            ofm_match_dl(ofm, OFPFW_DL_DST, 0, 0, match.getValue());
             break;
         case RFMT_IN_PORT: {
-            uint8_t* v = (uint8_t *)match.getValue();
-            ofm_match_in(ofm, (v[0] << 8) | v[1] );
+            ofm_match_in(ofm, match.getValue());
             break;
         }
         case RFMT_IPV6:
         case RFMT_MPLS:
-        default: {
             /* Not implemented in OpenFlow 1.0. */
+        default:
             error = -1;
             break;
-        }
     }
 
     return error;
@@ -49,23 +46,53 @@ int add_match(ofp_flow_mod *ofm, Match& match) {
  *
  * Returns -1 on failure.
  */
-int add_action(ofp_action_header *oah, Action& action) {
+int add_action(uint8_t *buf, const Action& action) {
     int error = 0;
+    ofp_action_header *oah = reinterpret_cast<ofp_action_header*>(buf);
 
     switch (action.getType()) {
         case RFAT_OUTPUT:
-            ofm_set_action(oah, OFPAT_OUTPUT, *(uint16_t*)action.getValue(), 0);
+            ofm_set_action(oah, OFPAT_OUTPUT, action.getUint16(), 0);
             break;
         case RFAT_SET_ETH_SRC:
-            ofm_set_action(oah, OFPAT_SET_DL_SRC, 0, (uint8_t*)action.getValue());
+            ofm_set_action(oah, OFPAT_SET_DL_SRC, 0, action.getValue());
             break;
         case RFAT_SET_ETH_DST:
-            ofm_set_action(oah, OFPAT_SET_DL_DST, 0, (uint8_t*)action.getValue());
+            ofm_set_action(oah, OFPAT_SET_DL_DST, 0, action.getValue());
             break;
         case RFAT_PUSH_MPLS:
         case RFAT_POP_MPLS:
         case RFAT_SWAP_MPLS:
             /* Not implemented in OpenFlow 1.0. */
+
+        default:
+            error = -1;
+            break;
+    }
+
+    return error;
+}
+
+/**
+ * Convert the RouteFlow Option to an OpenFlow field
+ *
+ * Returns -1 on failure.
+ */
+int add_option(ofp_flow_mod *ofm, const Option& option) {
+    int error = 0;
+
+    switch (option.getType()) {
+        case RFOT_PRIORITY:
+            ofm->priority = htons(option.getUint16());
+            break;
+        case RFOT_IDLE_TIMEOUT:
+            ofm->idle_timeout = htons(option.getUint16());
+            break;
+        case RFOT_HARD_TIMEOUT:
+            ofm->hard_timeout = htons(option.getUint16());
+            break;
+        default:
+            /* Unsupported Option. */
             error = -1;
             break;
     }
@@ -82,9 +109,9 @@ size_t ofp_match_len(std::vector<Match> matches) {
 }
 
 /**
- * Return the size (in bytes) of the OpenFlow struct to hold the given action.
+ * Return the size of the OpenFlow struct to hold the given action.
  */
-size_t ofp_len(Action& action) {
+size_t ofp_len(const Action& action) {
     size_t len = 0;
 
     switch (action.getType()) {
@@ -99,6 +126,7 @@ size_t ofp_len(Action& action) {
         case RFAT_POP_MPLS:
         case RFAT_SWAP_MPLS:
             /* Not implemented in OpenFlow 1.0. */
+        default:
             break;
     }
 
@@ -119,49 +147,67 @@ size_t ofp_action_len(std::vector<Action> actions) {
     return len;
 }
 
+void log_error(std::string type, bool optional) {
+    if (optional) {
+        VLOG_DBG(lg, "Dropping unsupported TLV (type: %s)", type.c_str());
+    } else {
+        VLOG_ERR(lg, "Failed to serialise TLV (type: %s)", type.c_str());
+    }
+}
+
 /**
- * Creates an OpenFlow FlowMod based on the given matches and actions
+ * Create an OpenFlow FlowMod based on the given matches and actions
  *
- * mod: Specify whether to add or remove a flow (RMT_*)
- * matches: Vector of Match structures
- * actions: Vector of Action structures
+ * mod: Specify whether to add/remove/modify a flow (RMT_*)
  *
  * Returns a shared_array pointing to NULL on failure (Unsupported feature)
  */
 boost::shared_array<uint8_t> create_flow_mod(uint8_t mod,
-            std::vector<Match> matches, std::vector<Action> actions) {
+            std::vector<Match> matches, std::vector<Action> actions,
+            std::vector<Option> options) {
     int error = 0;
     ofp_flow_mod *ofm;
-    size_t size = sizeof *ofm + ofp_match_len(matches) + ofp_action_len(actions);
+    size_t size = sizeof *ofm + ofp_match_len(matches)
+                  + ofp_action_len(actions);
 
     boost::shared_array<uint8_t> raw_of(new uint8_t[size]);
-    ofm = (ofp_flow_mod*) raw_of.get();
+    ofm = reinterpret_cast<ofp_flow_mod*>(raw_of.get());
     ofm_init(ofm, size);
 
-    uint8_t* oah = (uint8_t*)ofm->actions;
+    uint8_t* oah = reinterpret_cast<uint8_t*>(ofm->actions);
 
     std::vector<Match>::iterator iter_mat;
     for (iter_mat = matches.begin(); iter_mat != matches.end(); ++iter_mat) {
         if (add_match(ofm, *iter_mat) != 0) {
-            Match& match = *iter_mat;
-            VLOG_DBG(lg, "Could not serialise Match (type: %d %s)",
-                     match.getType(),
-                     match.type_to_string(match.getType()).c_str());
-            error = -1;
-            break;
+            log_error(iter_mat->type_to_string(), iter_mat->optional());
+            if (!iter_mat->optional()) {
+                error = -1;
+                break;
+            }
         }
     }
 
     std::vector<Action>::iterator iter_act;
     for (iter_act = actions.begin(); iter_act != actions.end(); ++iter_act) {
-        if (add_action((ofp_action_header*)oah, *iter_act) != 0) {
-            Action& action = *iter_act;
-            VLOG_DBG(lg, "Could not serialise Action (type: %s)",
-                     action.type_to_string(action.getType()).c_str());
-            error = -1;
-            break;
+        if (add_action(oah, *iter_act) != 0) {
+            log_error(iter_act->type_to_string(), iter_act->optional());
+            if (!iter_act->optional()) {
+                error = -1;
+                break;
+            }
         }
         oah += ofp_len(*iter_act);
+    }
+
+    std::vector<Option>::iterator iter_opt;
+    for (iter_opt = options.begin(); iter_opt != options.end(); ++iter_opt) {
+        if (add_option(ofm, *iter_opt) != 0) {
+            log_error(iter_opt->type_to_string(), iter_opt->optional());
+            if (!iter_opt->optional()) {
+                error = -1;
+                break;
+            }
+        }
     }
 
     switch (mod) {
@@ -172,7 +218,7 @@ boost::shared_array<uint8_t> create_flow_mod(uint8_t mod,
             ofm_set_command(ofm, OFPFC_DELETE_STRICT);
             break;
         default:
-            VLOG_DBG(lg, "Unrecognised RouteModType (type: %d)", mod);
+            VLOG_ERR(lg, "Unrecognised RouteModType (type: %d)", mod);
             error = -1;
             break;
     }
@@ -183,5 +229,3 @@ boost::shared_array<uint8_t> create_flow_mod(uint8_t mod,
 
     return raw_of;
 }
-
-} // namespace rfproxy
