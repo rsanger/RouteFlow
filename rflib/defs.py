@@ -6,7 +6,8 @@ RFSERVER_RFPROXY_CHANNEL = "rfserver<->rfproxy"
 
 RFTABLE_NAME = "rftable"
 RFCONFIG_NAME = "rfconfig"
-RFINTERNAL_NAME = "rfinternal"
+RFISL_NAME = "rfisl"
+RFISLCONF_NAME = "rfislconfi"
 
 RFSERVER_ID = "rfserver"
 RFPROXY_ID = "rfproxy"
