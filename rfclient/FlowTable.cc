@@ -332,7 +332,7 @@ void FlowTable::addFlowToHw(const RouteEntry& rentry) {
 	MACAddress dstMac;
 
 	uint8_t tries = 0;
-    bool found;
+    bool found = false;
 
 	// We need to resolve the gateway's IP in order to install a route flow.
 	// The MAC address of the next-hop is required as it is used to re-write
