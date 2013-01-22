@@ -250,8 +250,10 @@ class RFServer(RFProtocolFactory, IPC.IPCMessageProcessor):
             elif entry.get_status() == RFISL_IDLE_DP_PORT:
                 entry.associate(ct_id, dp_id, dp_port, eth_addr)
                 self.isltable.set_entry(entry)
-                n_entry = self.isltable.get_entry_by_addr(ct_id, dp_id,
-                                                          dp_port, eth_addr)
+                n_entry = self.isltable.get_entry_by_remote(entry.ct_id, 
+                                                            entry.dp_id,
+                                                            entry.dp_port, 
+                                                            entry.eth_addr)
                 if n_entry is None: 
                     n_entry = RFISLEntry(vm_id=entry.vm_id, ct_id=ct_id, 
                                          dp_id=dp_id, dp_port=dp_port, 

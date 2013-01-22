@@ -135,6 +135,13 @@ class RFISLTable(MongoTable):
             return None
         return result[0]
 
+    def get_entry_by_remote(self, rem_ct, rem_id, rem_port, rem_eth_addr):
+        result = self.get_entries(rem_ct=rem_ct, rem_id=rem_id, 
+                                  rem_port=rem_port, rem_eth_addr=rem_eth_addr)
+        if not result:
+            return None
+        return result[0]
+
     def get_dp_entries(self, ct_id, dp_id):
         return self.get_entries(ct_id=ct_id, dp_id=dp_id)
 
