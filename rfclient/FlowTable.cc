@@ -78,7 +78,7 @@ void FlowTable::start(uint64_t vm_id, map<string, Interface> interfaces,
     RTPolling.detach();
 }
 
-int FlowTable::updateHostTable(const struct sockaddr_nl *who, struct nlmsghdr *n, void *arg) {
+int FlowTable::updateHostTable(const struct sockaddr_nl *, struct nlmsghdr *n, void *) {
 	struct ndmsg *ndmsg_ptr = (struct ndmsg *) NLMSG_DATA(n);
 	struct rtattr *rtattr_ptr;
 
@@ -158,7 +158,7 @@ int FlowTable::updateHostTable(const struct sockaddr_nl *who, struct nlmsghdr *n
 	return 0;
 }
 
-int FlowTable::updateRouteTable(const struct sockaddr_nl *who, struct nlmsghdr *n, void *arg) {
+int FlowTable::updateRouteTable(const struct sockaddr_nl *, struct nlmsghdr *n, void *) {
 	struct rtmsg *rtmsg_ptr = (struct rtmsg *) NLMSG_DATA(n);
 
 	if (!((n->nlmsg_type == RTM_NEWROUTE || n->nlmsg_type == RTM_DELROUTE) && rtmsg_ptr->rtm_table == RT_TABLE_MAIN)) {
