@@ -14,20 +14,26 @@ using namespace std;
 
 #define FULL_IPV4_MASK ((in_addr){ 0xffffffff })
 #define FULL_CIDR_MASK 32
-#define FULL_IPV6_MASK ((in6_addr){{{ 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff }}})
+#define FULL_IPV6_MASK ((in6_addr){{{ 0xff, 0xff, 0xff, 0xff, \
+                                      0xff, 0xff, 0xff, 0xff, \
+                                      0xff, 0xff, 0xff, 0xff, \
+                                      0xff, 0xff, 0xff, 0xff }}})
 #define EMPTY_MAC_ADDRESS "00:00:00:00:00:00"
 
-struct rtnl_handle FlowTable::rthNeigh;
-struct rtnl_handle FlowTable::rth;
+const MACAddress FlowTable::MAC_ADDR_NONE(EMPTY_MAC_ADDRESS);
+
 int FlowTable::family = AF_UNSPEC;
 unsigned FlowTable::groups = ~0U;
 int FlowTable::llink = 0;
 int FlowTable::laddr = 0;
 int FlowTable::lroute = 0;
+
+struct rtnl_handle FlowTable::rthNeigh;
 boost::thread FlowTable::HTPolling;
+struct rtnl_handle FlowTable::rth;
 boost::thread FlowTable::RTPolling;
+
 map<string, Interface> FlowTable::interfaces;
-const MACAddress FlowTable::MAC_ADDR_NONE(EMPTY_MAC_ADDRESS);
 vector<uint32_t>* FlowTable::down_ports;
 IPCMessageService* FlowTable::ipc;
 uint64_t FlowTable::vm_id;
@@ -35,14 +41,15 @@ uint64_t FlowTable::vm_id;
 list<RouteEntry> FlowTable::routeTable;
 list<HostEntry> FlowTable::hostTable;
 
-// TODO: implement a way to pause the flow table updates when the VM is not associated with a valid datapath
+// TODO: implement a way to pause the flow table updates when the VM is not
+//       associated with a valid datapath
 
 void FlowTable::HTPollingCb() {
-	rtnl_listen(&rthNeigh, FlowTable::updateHostTable, NULL);
+    rtnl_listen(&rthNeigh, FlowTable::updateHostTable, NULL);
 }
 
 void FlowTable::RTPollingCb() {
-	rtnl_listen(&rth, FlowTable::updateRouteTable, NULL);
+    rtnl_listen(&rth, FlowTable::updateRouteTable, NULL);
 }
 
 void FlowTable::clear() {
@@ -50,19 +57,21 @@ void FlowTable::clear() {
     FlowTable::hostTable.clear();
 }
 
-void FlowTable::start(uint64_t vm_id, map<string, Interface> interfaces, IPCMessageService* ipc, vector<uint32_t>* down_ports) {
-	FlowTable::vm_id = vm_id;
-	FlowTable::interfaces = interfaces;
-	FlowTable::ipc = ipc;
+void FlowTable::start(uint64_t vm_id, map<string, Interface> interfaces,
+                      IPCMessageService* ipc, vector<uint32_t>* down_ports) {
+    FlowTable::vm_id = vm_id;
+    FlowTable::interfaces = interfaces;
+    FlowTable::ipc = ipc;
     FlowTable::down_ports = down_ports;
 
-	rtnl_open(&rth, RTMGRP_IPV4_MROUTE | RTMGRP_IPV4_ROUTE | RTMGRP_IPV6_MROUTE | RTMGRP_IPV6_ROUTE);
-	rtnl_open(&rthNeigh, RTMGRP_NEIGH);
+    rtnl_open(&rth, RTMGRP_IPV4_MROUTE | RTMGRP_IPV4_ROUTE
+                  | RTMGRP_IPV6_MROUTE | RTMGRP_IPV6_ROUTE);
+    rtnl_open(&rthNeigh, RTMGRP_NEIGH);
 
-	HTPolling = boost::thread(&FlowTable::HTPollingCb);
-	RTPolling = boost::thread(&FlowTable::RTPollingCb);
-	HTPolling.detach();
-	RTPolling.detach();
+    HTPolling = boost::thread(&FlowTable::HTPollingCb);
+    RTPolling = boost::thread(&FlowTable::RTPollingCb);
+    HTPolling.detach();
+    RTPolling.detach();
 }
 
 int FlowTable::updateHostTable(const struct sockaddr_nl *who, struct nlmsghdr *n, void *arg) {
