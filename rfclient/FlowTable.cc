@@ -4,6 +4,9 @@
 #include <netdb.h>
 #include <sys/socket.h>
 #include <time.h>
+
+#include <string>
+#include <vector>
 #include <iostream>
 
 #include "ipc/RFProtocol.h"
