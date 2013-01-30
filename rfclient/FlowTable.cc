@@ -85,6 +85,7 @@ int FlowTable::updateHostTable(const struct sockaddr_nl *who, struct nlmsghdr *n
 	memset(intf, 0, IF_NAMESIZE + 1);
 
 	if (if_indextoname((unsigned int) ndmsg_ptr->ndm_ifindex, (char *) intf) == NULL) {
+		perror("HostTable");
 		return 0;
 	}
 
@@ -107,12 +108,16 @@ int FlowTable::updateHostTable(const struct sockaddr_nl *who, struct nlmsghdr *n
 	for (; RTA_OK(rtattr_ptr, rtmsg_len); rtattr_ptr = RTA_NEXT(rtattr_ptr, rtmsg_len)) {
 		switch (rtattr_ptr->rta_type) {
 		case RTA_DST:
-			if (inet_ntop(AF_INET, RTA_DATA(rtattr_ptr), ip, 128) == NULL)
+			if (inet_ntop(AF_INET, RTA_DATA(rtattr_ptr), ip, 128) == NULL) {
+				perror("HostTable");
 				return 0;
+			}
 			break;
 		case NDA_LLADDR:
-			if (strncpy(mac, ether_ntoa(((ether_addr *) RTA_DATA(rtattr_ptr))), sizeof(mac)) == NULL)
+			if (strncpy(mac, ether_ntoa(((ether_addr *) RTA_DATA(rtattr_ptr))), sizeof(mac)) == NULL) {
+				perror("HostTable");
 				return 0;
+			}
 			break;
 		default:
 			break;
@@ -128,8 +133,10 @@ int FlowTable::updateHostTable(const struct sockaddr_nl *who, struct nlmsghdr *n
 	it = interfaces.find(intf);
 	if (it != interfaces.end())
 		hentry.interface = it->second;
-	if (not hentry.interface.active)
+	if (not hentry.interface.active) {
+		fprintf(stderr, "Interface inactive. Dropping Host Entry\n");
 		return 0;
+	}
 
 	switch (n->nlmsg_type) {
 	    case RTM_NEWNEIGH:
@@ -216,8 +223,8 @@ int FlowTable::updateRouteTable(const struct sockaddr_nl *who, struct nlmsghdr *
 	/* Skipping routes to directly attached networks (next-hop field is blank) */
 	{
 		struct in_addr gwAddr;
-		if (inet_aton(gw, &gwAddr) == 0)
-		{
+		if (inet_aton(gw, &gwAddr) == 0) {
+			fprintf(stderr, "Blank next-hop field. Dropping Route\n");
 			return 0;
 		}
 	}
@@ -237,6 +244,7 @@ int FlowTable::updateRouteTable(const struct sockaddr_nl *who, struct nlmsghdr *
 
 		// Discard if there's no gateway
 		if (inet_addr(gw) == INADDR_NONE) {
+			fprintf(stderr, "No gateway specified. Dropping Route\n");
 			return 0;
 		}
 
@@ -249,6 +257,7 @@ int FlowTable::updateRouteTable(const struct sockaddr_nl *who, struct nlmsghdr *
 			rentry.interface = it->second;
 
 		if (not rentry.interface.active) {
+			fprintf(stderr, "Interface inactive. Dropping NEWROUTE\n");
 			return 0;
 		}
 
@@ -274,6 +283,7 @@ int FlowTable::updateRouteTable(const struct sockaddr_nl *who, struct nlmsghdr *
 			rentry.interface = it->second;
 
 		if (not rentry.interface.active) {
+			fprintf(stderr, "Interface inactive. Dropping DELROUTE\n");
 			return 0;
 		}
 
@@ -306,7 +316,7 @@ void FlowTable::fakeReq(const char *hostAddr, const char *intf) {
 	if (sin->sin_addr.s_addr == (uint32_t) -1) {
 		if (!(hp = gethostbyname(hostAddr))) {
 			fprintf(stderr, "ARP: %s ", hostAddr);
-			herror((char *) NULL);
+			perror(NULL);
 			return;
 		}
 		bcopy((char *) hp->h_addr, (char *) &sin->sin_addr,
@@ -314,7 +324,7 @@ void FlowTable::fakeReq(const char *hostAddr, const char *intf) {
 	}
 
 	if ((s = socket(AF_INET, SOCK_STREAM, 0)) < 0) {
-		perror("socket() failed.");
+		perror("socket() failed");
 		return;
 	}
 
@@ -416,6 +426,7 @@ void FlowTable::sendToHw(RouteModType mod, const IPAddress& addr,
                          const IPAddress& mask, const Interface& local_iface,
                          const MACAddress& gateway) {
     if (is_port_down(local_iface.port)) {
+        fprintf(stderr, "Cannot send RouteMod for down port\n");
         return;
     }
 
