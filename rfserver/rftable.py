@@ -92,7 +92,8 @@ class RFConfig(MongoTable):
         MongoTable.__init__(self, address, RFCONFIG_NAME, RFCONFIGENTRY)
         # TODO: perform validation of config
         configfile = file(ifile)
-        entries = [line.strip("\n").split(",") for line in configfile.readlines()[1:]]
+        lines = configfile.readlines()[1:]
+        entries = [line.strip("\n").split(",") for line in lines]
         for (a, b, c, d, e) in entries:
             self.set_entry(RFConfigEntry(int(a, 16), int(b),
                                          int(c),
@@ -124,7 +125,8 @@ def pack_into_dict(dest, obj, attr):
 
 
 class RFEntry:
-    def __init__(self, vm_id=None, vm_port=None, ct_id=None, dp_id=None, dp_port=None, vs_id=None, vs_port=None):
+    def __init__(self, vm_id=None, vm_port=None, ct_id=None, dp_id=None,
+                 dp_port=None, vs_id=None, vs_port=None):
         self.id = None
         self.vm_id = vm_id
         self.vm_port = vm_port
@@ -233,7 +235,8 @@ class RFEntry:
         
         
 class RFConfigEntry:
-    def __init__(self, vm_id=None, vm_port=None, ct_id=None, dp_id=None, dp_port=None):
+    def __init__(self, vm_id=None, vm_port=None, ct_id=None, dp_id=None, 
+                 dp_port=None):
         self.id = None
         self.vm_id = vm_id
         self.vm_port = vm_port
