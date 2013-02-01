@@ -1,3 +1,5 @@
+This is routemod/v7 with different mac addresses for each port.
+
 # Welcome
 This version of RouteFlow is a beta developers' release intended to evaluate RouteFlow for providing virtualized IP routing services on one or more OpenFlow switches.
 
