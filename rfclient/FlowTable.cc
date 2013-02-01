@@ -368,7 +368,6 @@ bool FlowTable::is_port_down(uint32_t port) {
 
 int FlowTable::setEthernet(RouteMod& rm, const Interface& local_iface,
                            const MACAddress& gateway) {
-    rm.add_match(Match(RFMT_ETHERNET, local_iface.hwaddress));
 
     if (rm.get_mod() != RMT_DELETE) {
         rm.add_action(Action(RFAT_SET_ETH_SRC, local_iface.hwaddress));

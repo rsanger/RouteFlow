@@ -13,9 +13,10 @@ DATA_PLANE_MAP = 6
 ROUTE_MOD = 7
 
 class PortRegister(MongoIPCMessage):
-    def __init__(self, vm_id=None, vm_port=None):
+    def __init__(self, vm_id=None, vm_port=None, hwaddress=None):
         self.set_vm_id(vm_id)
         self.set_vm_port(vm_port)
+        self.set_hwaddress(hwaddress)
 
     def get_type(self):
         return PORT_REGISTER
@@ -40,14 +41,23 @@ class PortRegister(MongoIPCMessage):
         except:
             self.vm_port = 0
 
+    def get_hwaddress(self):
+        return self.hwaddress
+
+    def set_hwaddress(self, hwaddress):
+        self.hwaddress = hwaddress
+
     def from_dict(self, data):
         self.set_vm_id(data["vm_id"])
         self.set_vm_port(data["vm_port"])
+        self.set_hwaddress(data["hwaddress"])
+
 
     def to_dict(self):
         data = {}
         data["vm_id"] = str(self.get_vm_id())
         data["vm_port"] = str(self.get_vm_port())
+        data["hwaddress"] = str(self.get_hwaddress())
         return data
 
     def from_bson(self, data):
