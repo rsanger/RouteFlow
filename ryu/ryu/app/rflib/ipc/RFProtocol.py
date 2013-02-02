@@ -504,7 +504,7 @@ class DatapathPortRegister(MongoIPCMessage):
             self.dp_port = 0
 
     def from_dict(self, data):
-        #self.set_ct_id(data["ct_id"])
+        self.set_ct_id(data["ct_id"])
         self.set_dp_id(data["dp_id"])
         self.set_dp_port(data["dp_port"])
 

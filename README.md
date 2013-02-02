@@ -1,3 +1,9 @@
+RF-OFv1.2
+=========
+
+RouteFlow, ryu 1.5 and OFv1.2
+
+
 # Welcome
 This version of RouteFlow is a beta developers' release intended to evaluate RouteFlow for providing virtualized IP routing services on one or more OpenFlow switches.
 
@@ -51,34 +57,34 @@ These instructions are tested on Ubuntu 11.04.
 ## Open vSwitch
 1. Install the dependencies:
 ```
-$ sudo apt-get install build-essential linux-headers-generic
+    $ sudo apt-get install build-essential linux-headers-generic
 ```
 
 2. Download Open vSwitch 1.4.1, extract it to a folder and browse to it:
 ```
-$ wget http://openvswitch.org/releases/openvswitch-1.4.1.tar.gz
-$ tar xzf openvswitch-1.4.1.tar.gz
-$ cd openvswitch-1.4.1
+    $ wget http://openvswitch.org/releases/openvswitch-1.4.1.tar.gz
+    $ tar xzf openvswitch-1.4.1.tar.gz
+    $ cd openvswitch-1.4.1
 ```
 
 3. Configure it as a kernel module, then compile and install:
 ```
-$ ./configure --with-linux=/lib/modules/`uname -r`/build
-$ make
-$ sudo make install
+    $ ./configure --with-linux=/lib/modules/`uname -r`/build
+    $ make
+    $ sudo make install
 ```
 
 4. Install the modules in your system:
 ```
-$ sudo mkdir /lib/modules/`uname -r`/kernel/net/ovs
-$ sudo cp datapath/linux/*.ko /lib/modules/`uname -r`/kernel/net/ovs/
-$ sudo depmod -a
-$ sudo modprobe openvswitch_mod
+    $ sudo mkdir /lib/modules/`uname -r`/kernel/net/ovs
+    $ sudo cp datapath/linux/*.ko /lib/modules/`uname -r`/kernel/net/ovs/
+    $ sudo depmod -a
+    $ sudo modprobe openvswitch_mod
 ```
 
 5. Edit /etc/modules to configure the automatic loading of the openvswitch_mod module:
 ```
-$ sudo vi /etc/modules
+    $ sudo vi /etc/modules
 ```
 Insert the following line at the end of the file, save and close:
 ```
@@ -86,14 +92,14 @@ openvswitch_mod
 ```
 To be sure that everything is OK, reboot your computer. Log in and try the following command. If the "openvswitch_mod" line is shown like in the example below, you're ready to go.
 ```
-$ sudo lsmod | grep openvswitch_mod
-openvswitch_mod        68247  0
+    $ sudo lsmod | grep openvswitch_mod
+    openvswitch_mod        68247  0
 ```
 
 6. Initialize the configuration database:
 ```
-$ sudo mkdir -p /usr/local/etc/openvswitch
-$ sudo ovsdb-tool create /usr/local/etc/openvswitch/conf.db vswitchd/vswitch.ovsschema
+    $ sudo mkdir -p /usr/local/etc/openvswitch
+    $ sudo ovsdb-tool create /usr/local/etc/openvswitch/conf.db vswitchd/vswitch.ovsschema
 ```
 
 ### Note
@@ -101,86 +107,193 @@ If for some reason the bridge module is loaded in your system, you'll run into a
 
 To avoid automatic loading of the bridge module (which would conflict with openvswitch_mod), let's blacklist it. Access the /etc/modprobe.d/ directory and create a new bridge.conf file:
 ```
-$ cd /etc/modprobe.d
-$ sudo vi bridge.conf
+    $ cd /etc/modprobe.d
+    $ sudo vi bridge.conf
 ```
 Insert the following lines in the editor, save and close:
 ```
-# avoid conflicts with the openvswitch module
-blacklist bridge
+    # avoid conflicts with the openvswitch module
+    blacklist bridge
 ```
 
 ## MongoDB
 1. Install the dependencies:
 ```
-$ sudo apt-get install git-core build-essential scons libboost-dev \
-  libboost-program-options-dev libboost-thread-dev libboost-filesystem-dev \
-  python-pip
+    $ sudo apt-get install git-core build-essential scons libboost-dev \
+      libboost-program-options-dev libboost-thread-dev libboost-filesystem-dev \
+      python-pip
 ```
 
 2. Download and extract MongoDB v2.0.5
 ```
-$ wget http://downloads.mongodb.org/src/mongodb-src-r2.0.5.tar.gz
-$ tar zxf mongodb-src-r2.0.5.tar.gz
-$ cd mongodb-src-r2.0.5
+    $ wget http://downloads.mongodb.org/src/mongodb-src-r2.0.5.tar.gz
+    $ tar zxf mongodb-src-r2.0.5.tar.gz
+    $ cd mongodb-src-r2.0.5
 ```
 
 3. There's a conflict with a constant name in NOX and MongoDB. It has been fixed, but is not part of version 2.0.5 yet. So, we need to fix it applying the changes listed in this [commit](https://github.com/mongodb/mongo/commit/a1e68969d48bbb47c893870f6428048a602faf90).
 
 4. Then compile and install MongoDB:
 ```
-$ scons all
-$ sudo scons --full install --prefix=/usr --sharedclient
-$ sudo pip install pymongo
+   $ scons all
+   $ sudo scons --full install --prefix=/usr --sharedclient
+   $ sudo pip install pymongo
 ```
 
-## NOX
-These instructions are only necessary if you want to run RouteFlow using NOX. The version of the NOX controller we are using does not compile under newer versions of Ubuntu (11.10, 12.04). You can use POX, which doesn't require compiling.
 
-1. Install the dependencies:
+## OpenFlow 1.2 Software Switch
+
+### Pre-Building
+
+
+The software switch makes use of the Netbee library to parse packets, therefore library files needed to build
+the switch.
+
+To compile Netbee on your system your
+system you need to install the following packages:
+
 ```
-$ sudo apt-get install autoconf automake g++ libtool swig make git-core \
-  libboost-dev libboost-test-dev libboost-filesystem-dev libssl-dev \
-  libpcap-dev python-twisted python-simplejson python-dev
+    $ sudo apt-get install autoconf automake g++ libtool swig make git-core \
+      libboost-dev libboost-test-dev libboost-filesystem-dev libssl-dev \
+      libpcap-dev python-twisted python-simplejson python-dev
+
+    $ sudo apt-get install cmake libpcap-dev libxerces-c2-dev libpcre3-dev flex bison
 ```
 
-2. TwistedPython, one of the dependencies of the NOX controller bundled with the RouteFlow distribution, got an update that made it stop working. To get around this issue, edit the following file:
-```
-$ sudo vi /usr/lib/python2.6/dist-packages/twisted/internet/base.py
-```
-Insert the method `_handleSigchld` at the end of the file, at the same level as the `mainLoop` method (be diligent, this is Python code), just before the last statement (the one that reads `__all__ = []`):
-```python
-        def _handleSigchld(self, signum, frame, _threadSupport=platform.supportsThreads()):
-            from twisted.internet.process import reapAllProcesses
-            if _threadSupport:
-                self.callFromThread(reapAllProcesses)
-            else:
-                self.callLater(0, reapAllProcesses)
-```
-Save the file and you're ready to go.
 
-NOX will be compiled with the RouteFlow distribution in the steps ahead.
+Download the source code on http://www.nbee.org/download/nbeesrc-12-05-16.php
+    
+Create the build system
+```
+    $ cd nbeesrc/src
+    $ cmake .
+```
+Compile
+```    
+    $ make
+```
+Add the shared libraries built in `/nbeesrc/bin/` to your `/usr/local/lib` directory.
+```
+    $ sudo cp nbeesrc/bin/libn*.so /usr/local/lib
+```
+Run `ldconfig`:
+```
+    $ sudo ldconfig
+```
+Put the folder `nbeesrc/include` in the `/usr/include`:
+```
+    $ sudo cp -R nbeesrc/include /usr/include
+```
+
+### Building
+
+To build, run the following commands in the `of12softswitch` directory:
+
+```
+    $ git clone https://github.com/CPqD/of12softswitch.git
+    $ cd of12softswitch
+```
+Add the following line in the file udatapath/dp_actions.c, in the function 'dp_actions_output_port', line 714, for of12softswitch send all packet data to controller:
+```
+    $ max_len = pkt->buffer->size;
+```
+
+Build it
+
+```
+    $ ./boot.sh
+    $ ./configure
+    $ make
+    $ sudo make install
+```
+
+## OpenFlow dissector for Wireshark
+
+Install Wireshark
+```
+    $ sudo apt-get install wireshark
+```
+Install scons 
+```
+    $ sudo apt-get install scons
+```
+Set the Wireshark include directory
+```
+    $ export WIRESHARK=/usr/include/wireshark
+```
+Building
+```
+    $ git clone https://github.com/CPqD/ofdissector.git
+    $ cd ofdissector/src
+    $ scons install
+```
+
+## Mininet
+You can install Mininet in the same machine of RouteFlow or in another one. In another machine you'll just need to install  OpenFlow 1.2 Software Switch too. 
+
+Download and Install
+```
+    $ cd  $HOME/
+    $ git clone git://github.com/mininet/mininet
+    mininet/util/install.sh -n
+```
+Important: If you don't downloaded the pre-configured Virtual Machine, some changes are needed to run the software switch with mininet.
+
+To make it work you have make changes to the file node.py, where the commands to start the switches are called 
+```
+    $ vim mininet/node.py
+```
+Change the following piece of code
+```
+    self.cmd( 'ofdatapath -i ' + ','.join( intfs ) +
+            ' punix:/tmp/' + self.name + mac_str + ' --no-slicing ' +
+            ' 1> ' + ofdlog + ' 2> ' + ofdlog + ' &' )
+    self.cmd( 'ofprotocol unix:/tmp/' + self.name +
+            ' tcp:%s:%d' % ( controller.IP(), controller.port ) +
+            ' --fail=closed ' + self.opts +
+            ' 1> ' + ofplog + ' 2>' + ofplog + ' &' )
+```
+Change the code to
+```
+    self.cmd( 'ofdatapath -i ' + ','.join( intfs ) +
+            ' punix:/var/run/' + self.name + ' --no-slicing '
+            + ' -d ' + self.dpid +
+            ' 1> ' + ofdlog + ' 2> ' + ofdlog + ' &' ) 
+    self.cmd( 'ofprotocol unix:/var/run/' + self.name +
+            ' ' + clist +
+            ' 1> ' + ofplog + ' 2>' + ofplog + ' &' )
+```
+Install the modified mininet
+``` 
+    $ sudo make install .
+```
+
 
 ## RouteFlow
 1. Install the dependencies:
 ```
-$ sudo apt-get install build-essential iproute-dev swig1.3
+    $ sudo apt-get install build-essential iproute-dev swig1.3
 ```
 
 2. Checkout the RouteFlow distribution:
 ```
-$ git clone git://github.com/CPqD/RouteFlow.git
+    $ git clone https://github.com/raphaelvrosa/RF-OFv1.2.git
 ```
 
-3. You can compile all RouteFlow applications by running the following command in the project root:
+3. You must compile just rfclient application by running the following command in the project root:
 ```
-$ make all
+    $ make rfclient
 ```
-You can also compile them individually:
+
+# Install Ryu
+
+Installing Ryu is quite easy:
+
 ```
-$ make rfclient
-$ make nox
+    $ cd RF-OFv1.2/ryu
+    $ sudo python ./setup.py install
 ```
+
 
 4. That's it, everything is compiled! After the build, you can run tests 1 and 2. The setup to run them is described in the "Running" section.
 
@@ -190,7 +303,7 @@ The folder rftest contains all that is needed to create and run two test cases.
 ## Virtual environment
 First, create the default LXC containers that will run as virtual machines:
 ```
-$ sudo ./create
+    $ sudo ./create
 ```
 The containers will have a default root/root user/password combination. **You should change that if you plan to deploy RouteFlow**.
 
@@ -205,17 +318,17 @@ You can stops them at any time by pressing CTRL+C.
 ### rftest1
 1. Run:
 ```
-$ sudo ./rftest1 --nox
+    $ sudo ./rftest1_ryu --ryu
 ```
 
 2. You can then log in to the LXC container b1 and try to ping b2:
 ```
-$ sudo lxc-console -n b1
+    $ sudo lxc-console -n b1
 ```
 
 3. Inside b1, run:
 ```
-# ping 172.31.2.2
+    $ ping 172.31.2.2
 ```
 
 For more details on this test, see its [explanation](http://sites.google.com/site/routeflow/documents/first-routeflow) (it's a bit dated).
@@ -225,29 +338,29 @@ This test should be run with a [Mininet](http://yuba.stanford.edu/foswiki/bin/vi
 
 1. Run:
 ```
-$ sudo ./rftest2 --pox
+    $ sudo ./rftest2_ryu --ryu
 ```
 
 2. Once you have a Mininet VM up and running, copy the network topology files in rftest to the VM:
 ```
-$ scp topo-4sw-4host.py openflow@[Mininet address]:/home/openflow/mininet/custom
-$ scp ipconf openflow@[Mininet address]:/home/openflow/
+    $ scp topo-4sw-4host.py openflow@[Mininet address]:/home/openflow/mininet/custom
+    $ scp ipconf openflow@[Mininet address]:/home/openflow/
 ```
 
 3. Then start the network:
 ```
-$ sudo mn --custom ~/mininet/custom/topo-4sw-4host.py --topo=rftopo" \
-   --controller=remote --ip=[Controller address] --port=6633"
+    $ sudo mn --custom ~/mininet/custom/topo-4sw-4host.py --topo=rftopo" \
+      --controller=remote --ip=[Controller address] --port=6633"
 ```
 Inside Mininet, load the address configuration:
 ```
-mininet> source ipconf
+    mininet> source ipconf
 ```
 Wait for the network to converge (it should take a few seconds), and try to ping:
 ```
-mininet> pingall
+    mininet> pingall
 ...
-mininet> h2 ping h3
+    mininet> h2 ping h3
 ```
 
 For more details on this test, see its [explanation](http://sites.google.com/site/routeflow/documents/tutorial2-four-routers-with-ospf) (it's a bit dated).
