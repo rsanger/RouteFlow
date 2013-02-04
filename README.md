@@ -1,4 +1,8 @@
-This is routemod/v7 with different mac addresses for each port.
+Inter Switch Link. 
+
+This assumes a full mesh of switches.
+
+Based on routemod/v7
 
 # Welcome
 This version of RouteFlow is a beta developers' release intended to evaluate RouteFlow for providing virtualized IP routing services on one or more OpenFlow switches.
