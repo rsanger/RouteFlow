@@ -41,11 +41,16 @@ DC_LDP_PASSIVE = 9		# LDP protocol
 DC_LDP_ACTIVE = 10		# LDP protocol
 DC_ALL = 255			# Send all traffic to the controller
 
+OFP_DEFAULT_PRIORITY = 0x8000
+
 PC_MAP = 0
 PC_RESET = 1
 
 # Format 12-digit hex ID
 format_id = lambda dp_id: hex(dp_id).rstrip("L")
+
+netmask_prefix = lambda a: sum([bin(int(x)).count("1") for x in a.split(".", 4)])
+cidr_to_mask = lambda a: ((1 << a) - 1) << (32 - a)
 
 ETHERTYPE_IP = 0x0800
 ETHERTYPE_ARP = 0x0806

@@ -2,7 +2,7 @@ import gevent
 import pymongo as mongo
 import bson
 
-import IPC
+import rflib.ipc.IPC as IPC
 
 FROM_FIELD = "from"
 TO_FIELD = "to"

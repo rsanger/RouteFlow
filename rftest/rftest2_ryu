@@ -1,4 +1,6 @@
 #!/bin/bash
+OVSSOCK=/tmp/openvswitch-db.sock
+VSCTL="ovs-vsctl --db=unix:$OVSSOCK"
 
 MONGODB_PORT=27017
 CONTROLLER_PORT=6633
@@ -81,11 +83,11 @@ reset() {
         kill_process_tree 1 $$
     fi
 
-    sudo ovs-vsctl del-br sw0 &> /dev/null;
-    sudo ovs-vsctl del-br br0 &> /dev/null;
-    sudo ovs-vsctl del-br dp0 &> /dev/null;
-    sudo ovs-vsctl del-br switch1 &> /dev/null;
-    sudo ovs-vsctl emer-reset &> /dev/null;
+    sudo $VSCTL del-br sw0 &> /dev/null;
+    sudo $VSCTL del-br br0 &> /dev/null;
+    sudo $VSCTL del-br dp0 &> /dev/null;
+    sudo $VSCTL del-br switch1 &> /dev/null;
+    sudo $VSCTL emer-reset &> /dev/null;
     
     echo_bold "-> Stopping and resetting LXC VMs...";
     lxc-stop -n rfvmA;
@@ -169,11 +171,11 @@ if [ "$ACTION" != "RESET" ]; then
     lxc-start -n rfvmD -d
     
     echo_bold "-> Starting the management network (br0)..."
-	ovs-vsctl add-br br0
-	ovs-vsctl add-port br0 rfvmA.0 
-	ovs-vsctl add-port br0 rfvmB.0 
-	ovs-vsctl add-port br0 rfvmC.0 
-	ovs-vsctl add-port br0 rfvmD.0
+	$VSCTL add-br br0
+	$VSCTL add-port br0 rfvmA.0 
+	$VSCTL add-port br0 rfvmB.0 
+	$VSCTL add-port br0 rfvmC.0 
+	$VSCTL add-port br0 rfvmD.0
     ifconfig br0 up
     ifconfig br0 192.169.1.1
 

@@ -178,7 +178,7 @@ class RFServer(RFProtocolFactory, IPC.IPCMessageProcessor):
                                      operation_id=operation_id))
 
     def config_dp(self, ct_id, dp_id):
-        if is_rfvs_int(dp_id) and not self.configured_rfvs:
+        if is_rfvs(dp_id) and not self.configured_rfvs:
             # If rfvs is coming up and we haven't configured it yet, do it
             # TODO: support more than one OVS
             self.configured_rfvs = True
@@ -198,7 +198,7 @@ class RFServer(RFProtocolFactory, IPC.IPCMessageProcessor):
             #self.send_datapath_config_message(ct_id, dp_id, DC_LDP_PASSIVE);
             #self.send_datapath_config_message(ct_id, dp_id, DC_LDP_ACTIVE);
             self.log.info("Configuring datapath (dp_id=%s)" % format_id(dp_id))
-        return is_rfvs_int(dp_id)
+        return is_rfvs(dp_id)
 
     # DatapathDown methods
     def set_dp_down(self, ct_id, dp_id):
