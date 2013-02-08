@@ -162,7 +162,7 @@ class RFServer(RFProtocolFactory, IPC.IPCMessageProcessor):
 
         # If no output action is found, don't forward the routemod.
         self.log.info("Received RouteMod with no Output Port - Dropping "
-                      "(vm_id=%s, vm_port=%s)" % (format_id(vm_id), vm_port))
+                      "(vm_id=%s)" % (format_id(vm_id)))
         
     def _send_rm_with_matches(self, rm, out_port, entries):
         #send entries matching external ports
