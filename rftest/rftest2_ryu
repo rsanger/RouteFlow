@@ -1,0 +1,211 @@
+#!/bin/bash
+OVSSOCK=/tmp/openvswitch-db.sock
+VSCTL="ovs-vsctl --db=unix:$OVSSOCK"
+
+MONGODB_PORT=27017
+CONTROLLER_PORT=6633
+
+if [ "$EUID" != "0" ]; then
+  echo "You must be root to run this script."
+  exit 1
+fi
+
+ACTION=""
+case "$1" in
+--ryu)
+    ACTION="RYU"
+    ;;
+--reset)
+    ACTION="RESET"
+    ;;
+*)
+    echo "Invalid argument: $1"
+    echo "Options: "
+    echo "    --ryu: run using RYU"
+    echo "    --reset: stop running and clear data from previous executions"
+    exit
+    ;;
+esac
+
+LXCDIR=/var/lib/lxc
+RF_HOME=..
+export PATH=$PATH:/usr/local/bin:/usr/local/sbin
+export PYTHONPATH=$PYTHONPATH:$RF_HOME
+
+cd $RF_HOME
+
+wait_port_listen() {
+    port=$1
+    while ! `nc -z localhost $port` ; do
+        echo -n .
+        sleep 1
+    done
+}
+
+echo_bold() {
+    echo -e "\033[1m${1}\033[0m"
+}
+
+kill_process_tree() {
+    top=$1
+    pid=$2
+    
+    children=`ps -o pid --no-headers --ppid ${pid}`
+
+    pkill -f "ofdatapath"
+    pkill -f "ofprotocol"
+
+    for child in $children
+    do
+        kill_process_tree 0 $child
+    done
+    
+    if [ $top -eq 0 ]; then
+        kill -9 $pid &> /dev/null
+    fi
+}
+
+reset() {
+    init=$1;
+    if [ $init -eq 1 ]; then
+        echo_bold "-> Starting OVS daemons...";
+        # Always try to start OVS
+        ovsdb-server --remote=punix:/usr/local/var/run/openvswitch/db.sock \
+	                         --remote=db:Open_vSwitch,manager_options \
+	                         --private-key=db:SSL,private_key \
+	                         --certificate=db:SSL,certificate \
+	                         --bootstrap-ca-cert=db:SSL,ca_cert \
+	                         --pidfile --detach
+        ovs-vswitchd --pidfile --detach
+
+	else
+        echo_bold "-> Stopping child processes...";
+        kill_process_tree 1 $$
+    fi
+
+    sudo $VSCTL del-br sw0 &> /dev/null;
+    sudo $VSCTL del-br br0 &> /dev/null;
+    sudo $VSCTL del-br dp0 &> /dev/null;
+    sudo $VSCTL del-br switch1 &> /dev/null;
+    sudo $VSCTL emer-reset &> /dev/null;
+    
+    echo_bold "-> Stopping and resetting LXC VMs...";
+    lxc-stop -n rfvmA;
+    lxc-stop -n rfvmB;
+    lxc-stop -n rfvmC;
+    lxc-stop -n rfvmD;
+        
+    rm -rf $LXCDIR/rfvmA/rootfs/var/run/network/ifstate;
+    rm -rf $LXCDIR/rfvmB/rootfs/var/run/network/ifstate;
+    rm -rf $LXCDIR/rfvmC/rootfs/var/run/network/ifstate;
+    rm -rf $LXCDIR/rfvmD/rootfs/var/run/network/ifstate;
+        
+    echo_bold "-> Deleting data from previous runs...";
+    rm -rf $HOME/db;
+    rm -rf /var/lib/lxc/rfvmA/rootfs/opt/rfclient;
+    rm -rf /var/lib/lxc/rfvmB/rootfs/opt/rfclient;
+    rm -rf /var/lib/lxc/rfvmC/rootfs/opt/rfclient;
+    rm -rf /var/lib/lxc/rfvmD/rootfs/opt/rfclient;
+}
+reset 1
+trap "reset 0; exit 0" INT
+
+if [ "$ACTION" != "RESET" ]; then
+    echo_bold "-> Starting MongoDB..."
+    mkdir $HOME/db
+    mongod --quiet --dbpath $HOME/db --logpath /var/log/mongodb.log &
+    wait_port_listen $MONGODB_PORT
+
+    echo_bold "-> Starting the virtual machines..."
+    # Create the rfclient dir
+    mkdir /var/lib/lxc/rfvmA/rootfs/opt/rfclient
+    mkdir /var/lib/lxc/rfvmB/rootfs/opt/rfclient
+    mkdir /var/lib/lxc/rfvmC/rootfs/opt/rfclient
+    mkdir /var/lib/lxc/rfvmD/rootfs/opt/rfclient
+
+    # Copy the rfclient executable
+    cp build/rfclient /var/lib/lxc/rfvmA/rootfs/opt/rfclient/rfclient
+    cp build/rfclient /var/lib/lxc/rfvmB/rootfs/opt/rfclient/rfclient
+    cp build/rfclient /var/lib/lxc/rfvmC/rootfs/opt/rfclient/rfclient
+    cp build/rfclient /var/lib/lxc/rfvmD/rootfs/opt/rfclient/rfclient
+
+    cp /usr/lib/libmongoclient.a /var/lib/lxc/rfvmA/rootfs/usr/lib
+    cp /usr/lib/libmongoclient.so /var/lib/lxc/rfvmA/rootfs/usr/lib
+    cp /usr/lib/libmongoclient.a /var/lib/lxc/rfvmB/rootfs/usr/lib
+    cp /usr/lib/libmongoclient.so /var/lib/lxc/rfvmB/rootfs/usr/lib
+    cp /usr/lib/libmongoclient.a /var/lib/lxc/rfvmC/rootfs/usr/lib
+    cp /usr/lib/libmongoclient.so /var/lib/lxc/rfvmC/rootfs/usr/lib
+    cp /usr/lib/libmongoclient.a /var/lib/lxc/rfvmD/rootfs/usr/lib
+    cp /usr/lib/libmongoclient.so /var/lib/lxc/rfvmD/rootfs/usr/lib
+
+    # We need to start the VMs with different sleep times to guarantee their order.
+    # This is a known Routeflow limitation, and we plan to eliminate it in the future.
+    echo "#!/bin/sh" > /var/lib/lxc/rfvmA/rootfs/root/run_rfclient.sh
+    echo "sleep 5" >> /var/lib/lxc/rfvmA/rootfs/root/run_rfclient.sh
+    echo "/etc/init.d/quagga start" >> /var/lib/lxc/rfvmA/rootfs/root/run_rfclient.sh
+    echo "/opt/rfclient/rfclient > /var/log/rfclient.log" >> /var/lib/lxc/rfvmA/rootfs/root/run_rfclient.sh
+
+    echo "#!/bin/sh" > /var/lib/lxc/rfvmB/rootfs/root/run_rfclient.sh
+    echo "sleep 10" >> /var/lib/lxc/rfvmB/rootfs/root/run_rfclient.sh
+    echo "/etc/init.d/quagga start" >> /var/lib/lxc/rfvmB/rootfs/root/run_rfclient.sh
+    echo "/opt/rfclient/rfclient > /var/log/rfclient.log" >> /var/lib/lxc/rfvmB/rootfs/root/run_rfclient.sh
+
+    echo "#!/bin/sh" > /var/lib/lxc/rfvmC/rootfs/root/run_rfclient.sh
+    echo "sleep 15" >> /var/lib/lxc/rfvmC/rootfs/root/run_rfclient.sh
+    echo "/etc/init.d/quagga start" >> /var/lib/lxc/rfvmC/rootfs/root/run_rfclient.sh
+    echo "/opt/rfclient/rfclient > /var/log/rfclient.log" >> /var/lib/lxc/rfvmC/rootfs/root/run_rfclient.sh
+
+    echo "#!/bin/sh" > /var/lib/lxc/rfvmD/rootfs/root/run_rfclient.sh
+    echo "sleep 20" >> /var/lib/lxc/rfvmD/rootfs/root/run_rfclient.sh
+    echo "/etc/init.d/quagga start" >> /var/lib/lxc/rfvmD/rootfs/root/run_rfclient.sh
+    echo "/opt/rfclient/rfclient > /var/log/rfclient.log" >> /var/lib/lxc/rfvmD/rootfs/root/run_rfclient.sh
+
+    chmod +x /var/lib/lxc/rfvmA/rootfs/root/run_rfclient.sh
+    chmod +x /var/lib/lxc/rfvmB/rootfs/root/run_rfclient.sh
+    chmod +x /var/lib/lxc/rfvmC/rootfs/root/run_rfclient.sh
+    chmod +x /var/lib/lxc/rfvmD/rootfs/root/run_rfclient.sh
+
+    lxc-start -n rfvmA -d
+    lxc-start -n rfvmB -d
+    lxc-start -n rfvmC -d
+    lxc-start -n rfvmD -d
+    
+    echo_bold "-> Starting the management network (br0)..."
+	$VSCTL add-br br0
+	$VSCTL add-port br0 rfvmA.0 
+	$VSCTL add-port br0 rfvmB.0 
+	$VSCTL add-port br0 rfvmC.0 
+	$VSCTL add-port br0 rfvmD.0
+    ifconfig br0 up
+    ifconfig br0 192.169.1.1
+
+    echo_bold "-> Starting the controller ($ACTION) and RFPRoxy..."
+    case "$ACTION" in
+    RYU)
+		ryu-manager ryu/ryu/app/rfproxy_v1_2.py &
+		cd - &> /dev/null
+    esac
+    wait_port_listen $CONTROLLER_PORT
+
+    echo_bold "-> Starting RFServer..."
+    ../rfserver/rfserver.py rftest2config.csv &
+
+    echo_bold "-> Starting the control plane network (dp0 VS)... 726676737266-7673"
+	ofdatapath --no-slicing punix:/var/run/s7266.sock --datapath-id=726676737266 --interfaces=rfvmA.1,rfvmA.2,rfvmA.3,rfvmA.4,rfvmB.1,rfvmB.2,rfvmB.3,rfvmC.1,rfvmC.2,rfvmC.3,rfvmD.1,rfvmD.2,rfvmD.3,rfvmD.4 1> /tmp/s7266-ofd.log 2>/tmp/s7266-ofd.log &
+
+	ofprotocol unix:/var/run/s7266.sock tcp:localhost:6633 1> /tmp/s7266-ofp.log 2>/tmp/s7266-ofp.log &
+
+    echo_bold "---"
+    echo_bold "This test is up and running."
+    echo_bold "Start Mininet:"
+    echo_bold "  $ sudo mn --custom ~/mininet/custom/topo-4sw-4host.py --topo=rftopo"
+    echo_bold "    --controller=remote --ip=ADDRESS --port=$CONTROLLER_PORT"
+    echo_bold "Replace ADDRESS with the address of this host's interface connected "
+    echo_bold "to the Mininet VM."
+    echo_bold "Then try pinging everything:"
+    echo_bold "  > pingall"
+    echo_bold "You can stop this test by pressing CTRL+C."
+    echo_bold "---"
+    wait
+fi
+exit 0

@@ -11,7 +11,7 @@ IPAddress::IPAddress(const int version) {
 IPAddress::IPAddress(const int version, const char* address) {
     string saddress(address);
     this->init(version);
-    this->data_from_string(address);    
+    this->data_from_string(address);
 }
 
 IPAddress::IPAddress(const int version, const string &address) {
@@ -19,6 +19,12 @@ IPAddress::IPAddress(const int version, const string &address) {
     this->data_from_string(address);
 }
 
+/**
+ * Create IPAddress based on an IPv4 address, converting to network
+ * byte-order for storing internally.
+ *
+ * data: IPv4 address in host byte-order
+ */
 IPAddress::IPAddress(const uint32_t data) {
     this->init(IPV4);
     uint32_t moddata = htonl(data);
@@ -63,6 +69,11 @@ bool IPAddress::operator==(const IPAddress &other) const {
         (memcmp(other.data, this->data, this->length) == 0));
 }
 
+/**
+ * Returns the in_addr (or in6_addr) structure for this IPAddress
+ *
+ * The caller is responsible for deleting the returned struct.
+ */
 void* IPAddress::toInAddr() const {
     void* n;
     if (this->version == IPV4) {
@@ -80,6 +91,11 @@ void IPAddress::toArray(uint8_t* array) const {
     memcpy(array, this->data, this->length);
 }
 
+/**
+ * Return the IPv4 address in host byte-order
+ *
+ * Returns 0 on failure (not IPv4 address).
+ */
 uint32_t IPAddress::toUint32() const {
     if (this->version == IPV4) {
         return ntohl(((in_addr*) this->toInAddr())->s_addr);
@@ -109,7 +125,7 @@ string IPAddress::toString() const {
 
 uint32_t IPAddress::toCIDRMask() const {
     uint32_t mask = this->toUint32();
-    
+
 	uint8_t n = 0;
 	for (uint8_t i = 0; i < 32; i++) {
 		if (((mask >> i) & 0x1) == 0x1) {
@@ -143,5 +159,5 @@ void IPAddress::data_from_string(const string &address) {
         struct in6_addr n6;
         inet_pton(AF_INET6, address.c_str(), &n6);
         memcpy(this->data, &n6.s6_addr, 16);
-    }    
+    }
 }
