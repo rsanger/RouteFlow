@@ -97,10 +97,29 @@ int FlowTable::updateHostTable(const struct sockaddr_nl *, struct nlmsghdr *n, v
 	}
 	*/
 
-	char ip[INET_ADDRSTRLEN];
+  int addrlen;
+  int inet;
+  int addr_version;
+
+  if (ndmsg_ptr->ndm_family == AF_INET){
+    addrlen = INET_ADDRSTRLEN;
+    inet = AF_INET;
+    addr_version = IPV4;
+  }
+  else if (ndmsg_ptr->ndm_family == AF_INET6){
+    addrlen = INET6_ADDRSTRLEN;
+    inet = AF_INET6;
+    addr_version = IPV6;
+  }
+  else {
+    perror("HostTable");
+    return 0;
+  }
+
+	char ip[addrlen];
 	char mac[2 * IFHWADDRLEN + 5 + 1];
 
-	memset(ip, 0, INET_ADDRSTRLEN);
+	memset(ip, 0, addrlen);
 	memset(mac, 0, 2 * IFHWADDRLEN + 5 + 1);
 
 	rtattr_ptr = (struct rtattr *) RTM_RTA(ndmsg_ptr);
@@ -109,7 +128,7 @@ int FlowTable::updateHostTable(const struct sockaddr_nl *, struct nlmsghdr *n, v
 	for (; RTA_OK(rtattr_ptr, rtmsg_len); rtattr_ptr = RTA_NEXT(rtattr_ptr, rtmsg_len)) {
 		switch (rtattr_ptr->rta_type) {
 		case RTA_DST:
-			if (inet_ntop(AF_INET, RTA_DATA(rtattr_ptr), ip, 128) == NULL) {
+			if (inet_ntop(inet, RTA_DATA(rtattr_ptr), ip, addrlen) == NULL) {
 				perror("HostTable");
 				return 0;
 			}
@@ -128,7 +147,7 @@ int FlowTable::updateHostTable(const struct sockaddr_nl *, struct nlmsghdr *n, v
 	HostEntry hentry;
 	map<string, Interface>::iterator it;
 
-	hentry.address = IPAddress(IPV4, ip);
+	hentry.address = IPAddress(addr_version, ip);
 	hentry.hwaddress = MACAddress(mac);
 
 	it = interfaces.find(intf);
@@ -165,12 +184,32 @@ int FlowTable::updateRouteTable(const struct sockaddr_nl *, struct nlmsghdr *n, 
 		return 0;
 	}
 
-	char net[INET_ADDRSTRLEN];
-	char gw[INET_ADDRSTRLEN];
+  int addrlen;
+  int inet;
+  int addr_version;
+
+  if (rtmsg_ptr->rtm_family == AF_INET){
+    addrlen = INET_ADDRSTRLEN;
+    inet = AF_INET;
+    addr_version = IPV4;
+  }
+  else if (rtmsg_ptr->rtm_family == AF_INET6){
+    addrlen = INET6_ADDRSTRLEN;
+    inet = AF_INET6;
+    addr_version = IPV6;
+  }
+  else {
+    fprintf(stderr, "rtmsg with bad address family");
+    return 0;
+  }
+
+	char net[addrlen];
+	char gw[addrlen];
+  bool no_gw = true;
 	char intf[IF_NAMESIZE + 1];
 
-	memset(net, 0, INET_ADDRSTRLEN);
-	memset(gw, 0, INET_ADDRSTRLEN);
+	memset(net, 0, addrlen);
+	memset(gw, 0, addrlen);
 	memset(intf, 0, IF_NAMESIZE + 1);
 
 	struct rtattr *rtattr_ptr;
@@ -180,10 +219,11 @@ int FlowTable::updateRouteTable(const struct sockaddr_nl *, struct nlmsghdr *n, 
 	for (; RTA_OK(rtattr_ptr, rtmsg_len); rtattr_ptr = RTA_NEXT(rtattr_ptr, rtmsg_len)) {
 		switch (rtattr_ptr->rta_type) {
 		case RTA_DST:
-			inet_ntop(AF_INET, RTA_DATA(rtattr_ptr), net, 128);
+			inet_ntop(inet, RTA_DATA(rtattr_ptr), net, addrlen);
 			break;
 		case RTA_GATEWAY:
-			inet_ntop(AF_INET, RTA_DATA(rtattr_ptr), gw, 128);
+			inet_ntop(inet, RTA_DATA(rtattr_ptr), gw, addrlen);
+      no_gw = false;
 			break;
 		case RTA_OIF:
 			if_indextoname(*((int *) RTA_DATA(rtattr_ptr)), (char *) intf);
@@ -210,7 +250,7 @@ int FlowTable::updateRouteTable(const struct sockaddr_nl *, struct nlmsghdr *n, 
 
 				for (; RTA_OK(attr, attrlen); attr = RTA_NEXT(attr, attrlen))
 					if ((attr->rta_type == RTA_GATEWAY)) {
-						inet_ntop(AF_INET, RTA_DATA(attr), gw, 128);
+						inet_ntop(inet, RTA_DATA(attr), gw, addrlen);
 						break;
 					}
 			}
@@ -223,17 +263,15 @@ int FlowTable::updateRouteTable(const struct sockaddr_nl *, struct nlmsghdr *n, 
 
 	/* Skipping routes to directly attached networks (next-hop field is blank) */
 	{
-		struct in_addr gwAddr;
-		if (inet_aton(gw, &gwAddr) == 0) {
+		//struct in_addr gwAddr;
+		//if (inet_aton(gw, &gwAddr) == 0) {
+    if (no_gw) {
 			fprintf(stderr, "Blank next-hop field. Dropping Route\n");
 			return 0;
 		}
 	}
 
-	struct in_addr convmask;
-	convmask.s_addr = htonl(~((1 << (32 - rtmsg_ptr->rtm_dst_len)) - 1));
-	char mask[INET_ADDRSTRLEN];
-	snprintf(mask, sizeof(mask), "%s", inet_ntoa(convmask));
+	uint8_t mask = rtmsg_ptr->rtm_dst_len;
 
 	RouteEntry rentry;
 	map<string, Interface>::iterator it;
@@ -241,17 +279,17 @@ int FlowTable::updateRouteTable(const struct sockaddr_nl *, struct nlmsghdr *n, 
 
 	switch (n->nlmsg_type) {
 	case RTM_NEWROUTE:
-		std::cout << "netlink->RTM_NEWROUTE: net=" << net << ", mask=" << mask << ", gw=" << gw << std::endl;
+		std::cout << "netlink->RTM_NEWROUTE: net=" << net << ", mask=" << (int) mask << ", gw=" << gw << std::endl;
 
-		// Discard if there's no gateway
-		if (inet_addr(gw) == INADDR_NONE) {
+		/* Discard if there's no gateway
+		if (net_addr(gw) == INADDR_NONE) {
 			fprintf(stderr, "No gateway specified. Dropping Route\n");
 			return 0;
-		}
-
-		rentry.address = IPAddress(IPV4, net);
-		rentry.gateway = IPAddress(IPV4, gw);
-		rentry.netmask = IPAddress(IPV4, mask);
+		}*/
+    
+    rentry.address = IPAddress(addr_version, net);
+    rentry.netmask = IPAddress(addr_version, mask);
+    rentry.gateway = IPAddress(addr_version, gw);
 
 		it = interfaces.find(intf);
 		if (it != interfaces.end())
@@ -273,11 +311,11 @@ int FlowTable::updateRouteTable(const struct sockaddr_nl *, struct nlmsghdr *n, 
 		FlowTable::routeTable.push_back(rentry);
 		break;
 	case RTM_DELROUTE:
-		std::cout << "netlink->RTM_DELROUTE: net=" << net << ", mask=" << mask << ", gw=" << gw << std::endl;
+		std::cout << "netlink->RTM_DELROUTE: net=" << net << ", mask=" << (int) mask << ", gw=" << gw << std::endl;
 
-		rentry.address = IPAddress(IPV4, net);
-		rentry.gateway = IPAddress(IPV4, gw);
-		rentry.netmask = IPAddress(IPV4, mask);
+    rentry.address = IPAddress(addr_version, net);
+    rentry.netmask = IPAddress(addr_version, mask);
+    rentry.gateway = IPAddress(addr_version, gw);
 
 		it = interfaces.find(intf);
 		if (it != interfaces.end())
@@ -303,32 +341,42 @@ int FlowTable::updateRouteTable(const struct sockaddr_nl *, struct nlmsghdr *n, 
 
 void FlowTable::fakeReq(const char *hostAddr, const char *intf) {
 	int s;
-	struct arpreq req;
 	struct hostent *hp;
-	struct sockaddr_in *sin;
+	struct sockaddr_storage store;
+  struct sockaddr_in *sin;
+  struct sockaddr_in6 *sin6;
 
-	memset(&req, 0, sizeof(req));
+  memset(&store, 0, sizeof(store));
+  sin = (sockaddr_in*) &store;
+  sin6 = (sockaddr_in6*) &store;
 
-	sin = (struct sockaddr_in *) &req.arp_pa;
-	sin->sin_family = AF_INET;
-	sin->sin_addr.s_addr = inet_addr(hostAddr);
-
-    // Cast to eliminate warning. in_addr.s_addr is uint32_t (netinet/in.h:141)
-	if (sin->sin_addr.s_addr == (uint32_t) -1) {
+	if (inet_pton(AF_INET, hostAddr, &sin->sin_addr) == 1){
+    sin->sin_family = AF_INET;
+  }
+  else if (inet_pton(AF_INET6, hostAddr, &sin6->sin6_addr) == 1){
+    sin6->sin6_family = AF_INET6;
+  }
+  else {
 		if (!(hp = gethostbyname(hostAddr))) {
 			fprintf(stderr, "ARP: %s ", hostAddr);
 			perror(NULL);
 			return;
-		}
-		memcpy(&sin->sin_addr, hp->h_addr, sizeof(sin->sin_addr));
+		} 
+    store.ss_family = hp->h_addrtype;
+    if (store.ss_family == AF_INET) {
+      memcpy(&sin->sin_addr, hp->h_addr, sizeof(struct in_addr));
+    }
+    else {
+      memcpy(&sin6->sin6_addr, hp->h_addr, sizeof(struct in6_addr));
+    }
 	}
 
-	if ((s = socket(AF_INET, SOCK_STREAM, 0)) < 0) {
+	if ((s = socket(store.ss_family, SOCK_STREAM, 0)) < 0) {
 		perror("socket() failed");
 		return;
 	}
 
-	connect(s, (struct sockaddr *) sin, sizeof(struct sockaddr));
+	connect(s, (struct sockaddr *) &store, sizeof(store));
 	close(s);
 }
 
@@ -390,7 +438,7 @@ int FlowTable::setIP(RouteMod& rm, const IPAddress& addr,
     }
 
     uint16_t priority = DEFAULT_PRIORITY;
-    priority += static_cast<uint16_t>(mask.toCIDRMask());
+    priority += static_cast<uint16_t>(mask.toPrefixLen());
     rm.add_option(Option(RFOT_PRIORITY, priority));
 
     return 0;

@@ -51,6 +51,35 @@ IPAddress::IPAddress(in6_addr data) {
     memcpy(this->data, &data, this->length);
 }
 
+IPAddress::IPAddress(const int version, uint8_t prefix_len){
+    this -> init(version);
+    if (version == IPV4){
+        if (prefix_len == 32){
+            uint32_t fullmask = (uint32_t) -1;
+            memcpy(this->data, &fullmask, this->length);
+        }
+        else {
+            uint32_t mask = htonl(((1 << prefix_len) -1 ) << (32 - prefix_len));
+            memcpy(this->data, &mask, this->length);
+        }
+    }
+    else {
+        for (int i = 0; i < this->length; i++){
+            if (prefix_len >= 8){
+                this->data[i] = 0xff;
+                prefix_len -= 8;
+            }
+            else if (prefix_len == 0){
+                this->data[i] = 0;
+            }
+            else {
+                this->data[i] = ((1 << prefix_len) - 1 ) << (8 - prefix_len);
+                prefix_len = 0;
+            }
+        }
+    }
+}
+
 IPAddress::~IPAddress() {
     delete this->data;
 }
@@ -123,19 +152,45 @@ string IPAddress::toString() const {
     return result;
 }
 
-uint32_t IPAddress::toCIDRMask() const {
+uint32_t IPAddress::toPrefixLen() const {
+	uint8_t n = 0;
+  if (this->version == IPV4){
     uint32_t mask = this->toUint32();
 
-	uint8_t n = 0;
-	for (uint8_t i = 0; i < 32; i++) {
-		if (((mask >> i) & 0x1) == 0x1) {
-			n++;
-		}
-	}
-
+    for (uint8_t i = 0; i < 32; i++) {
+      if (((mask >> i) & 0x1) == 0x1) {
+        n++;
+      }
+    }
+  }
+  else {
+    for (uint8_t i = 0; i < this->length; i++){
+      if (data[i] == 0xff){
+        n += 8;
+      }
+      else {
+        uint8_t shft;
+        for (shft = 1; !((data[i] >> shft) & 1); shft++);
+        n += (8 - shft);
+        break;
+      }
+    }
+  }
 	return n;
 }
 
+uint32_t IPAddress::toCIDRMask() const {
+   uint32_t mask = this->toUint32();
+        
+   uint8_t n = 0;
+   for (uint8_t i = 0; i < 32; i++) {
+     if (((mask >> i) & 0x1) == 0x1) {
+       n++;
+     }
+  }
+
+  return n;
+}
 int IPAddress::getVersion() const {
     return this->version;
 }

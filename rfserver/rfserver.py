@@ -202,6 +202,9 @@ class RFServer(RFProtocolFactory, IPC.IPCMessageProcessor):
                 rm.add_match(Match.ETHERTYPE(ETHERTYPE_IP))
                 rm.add_match(Match.NW_PROTO(IPPROTO_TCP))
                 rm.add_match(Match.TP_SRC(TPORT_LDP))
+            elif operation_id == DC_ICMPV6:
+                rm.add_match(Match.ETHERTYPE(ETHERTYPE_IPV6))
+                rm.add_match(Match.NW_PROTO(IPPROTO_ICMPV6))
             elif operation_id == DC_VM_INFO:
                 rm.add_match(Match.ETHERTYPE(RF_ETH_PROTO))
             rm.add_action(Action.CONTROLLER())
@@ -218,17 +221,18 @@ class RFServer(RFProtocolFactory, IPC.IPCMessageProcessor):
             self.log.info("Configuring RFVS (dp_id=%s)" % format_id(dp_id))
         elif self.rftable.is_dp_registered(ct_id, dp_id):
             # Configure a normal switch. Clear the tables and install default flows.
-            self.send_datapath_config_message(ct_id, dp_id, DC_CLEAR_FLOW_TABLE);
+            self.send_datapath_config_message(ct_id, dp_id, DC_CLEAR_FLOW_TABLE)
             # TODO: enforce order: clear should always be executed first
-            self.send_datapath_config_message(ct_id, dp_id, DC_DROP_ALL);
-            self.send_datapath_config_message(ct_id, dp_id, DC_OSPF);
-            self.send_datapath_config_message(ct_id, dp_id, DC_BGP_PASSIVE);
-            self.send_datapath_config_message(ct_id, dp_id, DC_BGP_ACTIVE);
-            self.send_datapath_config_message(ct_id, dp_id, DC_RIPV2);
-            self.send_datapath_config_message(ct_id, dp_id, DC_ARP);
-            self.send_datapath_config_message(ct_id, dp_id, DC_ICMP);
-            #self.send_datapath_config_message(ct_id, dp_id, DC_LDP_PASSIVE);
-            #self.send_datapath_config_message(ct_id, dp_id, DC_LDP_ACTIVE);
+            self.send_datapath_config_message(ct_id, dp_id, DC_DROP_ALL)
+            self.send_datapath_config_message(ct_id, dp_id, DC_OSPF)
+            self.send_datapath_config_message(ct_id, dp_id, DC_BGP_PASSIVE)
+            self.send_datapath_config_message(ct_id, dp_id, DC_BGP_ACTIVE)
+            self.send_datapath_config_message(ct_id, dp_id, DC_RIPV2)
+            self.send_datapath_config_message(ct_id, dp_id, DC_ARP)
+            self.send_datapath_config_message(ct_id, dp_id, DC_ICMP)
+            self.send_datapath_config_message(ct_id, dp_id, DC_LDP_PASSIVE)
+            self.send_datapath_config_message(ct_id, dp_id, DC_LDP_ACTIVE)
+            self.send_datapath_config_message(ct_id, dp_id, DC_ICMPV6)
             self.log.info("Configuring datapath (dp_id=%s)" % format_id(dp_id))
         return is_rfvs(dp_id)
 

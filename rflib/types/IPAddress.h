@@ -23,6 +23,7 @@ class IPAddress {
         IPAddress(const int version, const uint8_t* data);
         IPAddress(in_addr data);
         IPAddress(in6_addr data);
+        IPAddress(const int version, uint8_t prefix_len);
         ~IPAddress();
 
         IPAddress& operator=(const IPAddress& other);
@@ -31,6 +32,7 @@ class IPAddress {
         void toArray(uint8_t* array) const;
         uint32_t toUint32() const;
         string toString() const;
+        uint32_t toPrefixLen() const;
         uint32_t toCIDRMask() const;
         int getVersion() const;
 
