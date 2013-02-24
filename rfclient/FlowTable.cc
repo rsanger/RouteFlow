@@ -101,20 +101,9 @@ int FlowTable::updateHostTable(const struct sockaddr_nl *, struct nlmsghdr *n, v
   int inet;
   int addr_version;
 
-  if (ndmsg_ptr->ndm_family == AF_INET){
-    addrlen = INET_ADDRSTRLEN;
-    inet = AF_INET;
-    addr_version = IPV4;
-  }
-  else if (ndmsg_ptr->ndm_family == AF_INET6){
-    addrlen = INET6_ADDRSTRLEN;
-    inet = AF_INET6;
-    addr_version = IPV6;
-  }
-  else {
-    perror("HostTable");
-    return 0;
-  }
+  inet = ndmsg_ptr->ndm_family;
+  addrlen = getAddrLen(inet);
+  addr_version = getVersion(inet);
 
 	char ip[addrlen];
 	char mac[2 * IFHWADDRLEN + 5 + 1];
@@ -188,20 +177,9 @@ int FlowTable::updateRouteTable(const struct sockaddr_nl *, struct nlmsghdr *n, 
   int inet;
   int addr_version;
 
-  if (rtmsg_ptr->rtm_family == AF_INET){
-    addrlen = INET_ADDRSTRLEN;
-    inet = AF_INET;
-    addr_version = IPV4;
-  }
-  else if (rtmsg_ptr->rtm_family == AF_INET6){
-    addrlen = INET6_ADDRSTRLEN;
-    inet = AF_INET6;
-    addr_version = IPV6;
-  }
-  else {
-    fprintf(stderr, "rtmsg with bad address family");
-    return 0;
-  }
+  inet = rtmsg_ptr->rtm_family;
+  addrlen = getAddrLen(inet);
+  addr_version = getVersion(inet);
 
 	char net[addrlen];
 	char gw[addrlen];
@@ -412,6 +390,28 @@ bool FlowTable::is_port_down(uint32_t port) {
         if (*it == port)
             return true;
     return false;
+}
+
+int FlowTable::getAddrLen(int family){
+  if (family == AF_INET){
+    return INET_ADDRSTRLEN;
+  }
+  else if (family == AF_INET6){
+    return INET6_ADDRSTRLEN;
+  }
+  else
+    return -1;
+}
+
+int FlowTable::getVersion(int family){
+  if (family == AF_INET){
+    return IPV4;
+  }
+  else if (family == AF_INET6){
+    return IPV6;
+  }
+  else
+    return -1;
 }
 
 int FlowTable::setEthernet(RouteMod& rm, const Interface& local_iface,

@@ -117,6 +117,8 @@ class FlowTable {
         static list<RouteEntry> routeTable;
         static list<HostEntry> hostTable;
 
+        static int getVersion(int family);
+        static int getAddrLen(int family);
         static bool is_port_down(uint32_t port);
         static int setEthernet(RouteMod& rm, const Interface& local_iface,
                                const MACAddress& gateway);
