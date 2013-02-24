@@ -63,7 +63,7 @@ IPAddress::IPAddress(const int version, uint8_t prefix_len){
             memcpy(this->data, &mask, this->length);
         }
     }
-    else {
+    else if (version == IPV6){
         for (int i = 0; i < this->length; i++){
             if (prefix_len >= 8){
                 this->data[i] = 0xff;
@@ -163,7 +163,7 @@ uint32_t IPAddress::toPrefixLen() const {
       }
     }
   }
-  else {
+  else if (this->version == IPV6){
     for (uint8_t i = 0; i < this->length; i++){
       if (data[i] == 0xff){
         n += 8;
@@ -175,6 +175,9 @@ uint32_t IPAddress::toPrefixLen() const {
         break;
       }
     }
+  }
+  else {
+    n = 0xff;
   }
 	return n;
 }
