@@ -259,11 +259,11 @@ int FlowTable::updateRouteTable(const struct sockaddr_nl *, struct nlmsghdr *n, 
 	case RTM_NEWROUTE:
 		std::cout << "netlink->RTM_NEWROUTE: net=" << net << ", mask=" << (int) mask << ", gw=" << gw << std::endl;
 
-		/* Discard if there's no gateway
-		if (net_addr(gw) == INADDR_NONE) {
+		// Discard if there's no gateway
+		if (inet == AF_INET && inet_addr(gw) == INADDR_NONE) {
 			fprintf(stderr, "No gateway specified. Dropping Route\n");
 			return 0;
-		}*/
+		}
     
     rentry.address = IPAddress(addr_version, net);
     rentry.netmask = IPAddress(addr_version, mask);
