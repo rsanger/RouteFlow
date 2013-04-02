@@ -32,9 +32,11 @@ namespace vigil {
 
 static Vlog_module lg("rfproxy");
 
+boost::mutex sendPacketMutex;
 
 // Base functions
 bool rfproxy::send_of_msg(uint64_t dp_id, uint8_t* msg) {
+    boost::lock_guard<boost::mutex> lock(sendPacketMutex);
     if (send_openflow_command(datapathid::from_host(dp_id), (ofp_header*) msg, true))
         return FAILURE;
     else
@@ -42,7 +44,7 @@ bool rfproxy::send_of_msg(uint64_t dp_id, uint8_t* msg) {
 }
 
 bool rfproxy::send_packet_out(uint64_t dp_id, uint32_t port, Buffer& data) {
-
+    boost::lock_guard<boost::mutex> lock(sendPacketMutex);
     if (send_openflow_packet(datapathid::from_host(dp_id), data, port,
                              OFPP_NONE, true))
         return FAILURE;
