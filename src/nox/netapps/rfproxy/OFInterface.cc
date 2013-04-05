@@ -46,6 +46,9 @@ int add_match(ofp_flow_mod *ofm, const Match& match) {
         case RFMT_TP_DST:
             ofm_match_tp(ofm, OFPFW_TP_DST, 0, match.getUint16());
             break;
+        case RFMT_IN_PORT:
+            ofm_match_in(ofm, static_cast<uint16_t>(match.getUint32()));
+            break;
         case RFMT_IPV6:
         case RFMT_MPLS:
             /* Not implemented in OpenFlow 1.0. */
