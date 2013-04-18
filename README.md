@@ -1,5 +1,12 @@
+nox-rfproxy
+===========
+
+A port of the RFProxy application to NOX-Classic. This repository is referenced
+by a core RouteFlow repository, and it is recommended to install via that
+repository (see "Building" below).
+
 NOX Network Control Platform
-===========================
+----------------------------
 
 Copyright (C) 2008-2009 Nicira Networks
 Copyright (C) 2009-2010 Stanford University
