@@ -8,8 +8,8 @@ repository (see "Building" below).
 NOX Network Control Platform
 ----------------------------
 
-Copyright (C) 2008-2009 Nicira Networks
-Copyright (C) 2009-2010 Stanford University
+Copyright (C) 2008-2009 Nicira Networks  
+Copyright (C) 2009-2010 Stanford University  
 Copyright (C) 2009-2010 International Computer Science Institute, UC Berkeley
 
 Welcome to the NOX network control platform.   This distribution
@@ -23,11 +23,6 @@ NOX can be extended both in C++ or Python and provides an abstracted
 interface to OpenFlow.  This distribution contains a set of example
 applications and some built in libraries which provide useful network
 functions such as host tracking and routing.
-
-*Note*
-
-NOX relies on OpenFlow as the communication protocol for controlling
-switches.
 
 Dependencies
 ------------
