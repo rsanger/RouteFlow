@@ -6,6 +6,7 @@ import logging
 import binascii
 import threading
 import time
+import argparse
 
 from bson.binary import Binary
 
@@ -409,16 +410,19 @@ class RFServer(RFProtocolFactory, IPC.IPCMessageProcessor):
                            format_id(entry.dp_id), entry.dp_port,
                            format_id(entry.vs_id), entry.vs_port))
 
+if __name__ == "__main__":
+    description='RFServer co-ordinates RFClient and RFProxy instances, ' \
+                'listens for route updates, and configures flow tables'
+    epilog='Report bugs to: https://github.com/CPqD/RouteFlow/issues'
 
-if len(sys.argv) == 3:
-    configfile = sys.argv[1]
-    islconffile = sys.argv[2]
+    parser = argparse.ArgumentParser(description=description, epilog=epilog)
+    parser.add_argument('configfile',
+                        help='VM-VS-DP mapping configuration file')
+    parser.add_argument('islconfigfile',
+                        help='Inter-Switch Link configuration file')
+
+    args = parser.parse_args()
     try:
-        RFServer(configfile, islconffile)
+        RFServer(args.configfile, args.islconfigfile)
     except IOError:
         sys.exit("Error opening file: {}".format(configfile))
-else:
-    sys.exit("Invalid parameters.\n"\
-             "Usage:\n"\
-             "  ./server.py [configfile]\n"\
-             "    configfile: path to CSV configuration file")
