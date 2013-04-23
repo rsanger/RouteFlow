@@ -2,6 +2,7 @@
 *~
 .#*
 .*.swp
+*.tmp
 /build/*
 *.pyo
 *.pyc

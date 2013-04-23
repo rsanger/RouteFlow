@@ -20,6 +20,7 @@ from rflib.types.Action import *
 from rflib.types.Option import *
 
 from rftable import *
+from rfroutes import *
 
 # Register actions
 REGISTER_IDLE = 0
@@ -32,6 +33,7 @@ class RFServer(RFProtocolFactory, IPC.IPCMessageProcessor):
         self.isltable = RFISLTable()
         self.config = RFConfig(configfile)
         self.islconf = RFISLConf(islconffile)
+        self.routes = RFRoutes()
         self.configured_rfvs = []
         # Logging
         self.log = logging.getLogger("rfserver")
@@ -116,6 +118,10 @@ class RFServer(RFProtocolFactory, IPC.IPCMessageProcessor):
     # and sends to the corresponding controller
     def register_route_mod(self, rm):
         vm_id = rm.get_id()
+
+        self.routes.new_route(rm)
+        print(str(self.routes.routes[vm_id]))
+        print(str(rm))
 
         # Find the output action
         for i, action in enumerate(rm.actions):
