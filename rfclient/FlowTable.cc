@@ -127,14 +127,15 @@ void FlowTable::GWResolverCb() {
         }
 
         if (existingEntry != NULL && pr.first == RMT_ADD) {
-            fprintf(stdout, "Received duplicate route addition for route %s\n",
-                    existingEntry->address.toString().c_str());
+            std::cout << "Received duplicate route addition for route " <<
+                    existingEntry->address.toString() << endl;
             continue;
         }
 
         if (existingEntry == NULL && pr.first == RMT_DELETE) {
-            fprintf(stdout, "Received route removal for %s but route %s.\n",
-                    pr.second.address.toString().c_str(), "cannot be found");
+            std::cout << "Received route removal for " << 
+                    pr.second.address.toString() <<
+                    "  but route cannot be found" << endl;
             continue;
         }
 
@@ -143,17 +144,17 @@ void FlowTable::GWResolverCb() {
          * popping and re-pushing. */
         const RouteEntry& re = pr.second;
         if (resolveGateway(re.gateway, re.interface) < 0) {
-            fprintf(stderr, "An error occurred while %s %s/%s.\n",
-                    "attempting to resolve", re.address.toString().c_str(),
-                    re.netmask.toString().c_str());
+            std::cout << "An error occurred while attempting to resolve " <<
+                    re.address.toString() << "/" <<
+                    re.netmask.toString() << endl;
             FlowTable::pendingRoutes.push(pr);
             continue;
         }
 
         if (FlowTable::sendToHw(pr.first, pr.second) < 0) {
-            fprintf(stderr, "An error occurred while pushing route %s/%s.\n",
-                    re.address.toString().c_str(),
-                    re.netmask.toString().c_str());
+            std::cout << "An error occurred while pushing route " <<
+                    re.address.toString() << "/" <<
+                    re.netmask.toString() << endl;
             FlowTable::pendingRoutes.push(pr);
             continue;
         }
@@ -163,7 +164,7 @@ void FlowTable::GWResolverCb() {
         } else if (pr.first == RMT_DELETE) {
             FlowTable::routeTable.remove(pr.second);
         } else {
-            fprintf(stderr, "Received unexpected RouteModType (%d)\n", pr.first);
+            std::cout << "Received unexpected RouteModType " << pr.first << endl;
         }
     }
 }
