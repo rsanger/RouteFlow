@@ -152,7 +152,11 @@ class RFISLConf(MongoTable):
     def __init__(self, ifile, address=MONGO_ADDRESS):
         MongoTable.__init__(self, address, RFISLCONF_NAME, RFISLCONFENTRY)
         # TODO: perform validation of config
-        internalfile = file(ifile)
+        try:
+            internalfile = file(ifile)
+        except:
+            # Default to no ISL config
+            return
         lines = internalfile.readlines()[1:]
         entries = [line.strip("\n").split(",") for line in lines]
         for (a, b, c, d, e, f, g, h, i) in entries:

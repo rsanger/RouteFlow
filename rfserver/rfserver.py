@@ -388,7 +388,8 @@ class RFServer(RFProtocolFactory, IPC.IPCMessageProcessor):
             vm_id, vm_port = entry.vm_id, entry.vm_port
             entry.make_idle(RFENTRY_IDLE_VM_PORT)
             self.rftable.set_entry(entry)
-            self.reset_vm_port(vm_id, vm_port)
+            if vm_id is not None:
+                self.reset_vm_port(vm_id, vm_port)
             self.log.debug("Datapath port down (dp_id=%s, dp_port=%i)" %
                            (format_id(dp_id), dp_port))
 
@@ -424,11 +425,11 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=description, epilog=epilog)
     parser.add_argument('configfile',
                         help='VM-VS-DP mapping configuration file')
-    parser.add_argument('islconfigfile',
-                        help='Inter-Switch Link configuration file')
+    parser.add_argument('-i', '--islconfig',
+                        help='ISL mapping configuration file')
 
     args = parser.parse_args()
     try:
-        RFServer(args.configfile, args.islconfigfile)
+        RFServer(args.configfile, args.islconfig)
     except IOError:
-        sys.exit("Error opening file: {}".format(configfile))
+        sys.exit("Error opening file: {}".format(args.configfile))

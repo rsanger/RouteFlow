@@ -117,11 +117,11 @@ void FlowTable::GWResolverCb() {
         PendingRoute pr;
         FlowTable::pendingRoutes.wait_and_pop(pr);
 
-        RouteEntry* existingEntry = NULL;
+        bool existingEntry = false;
         std::list<RouteEntry>::iterator iter = FlowTable::routeTable.begin();
         for (; iter != FlowTable::routeTable.end(); iter++) {
-            if (pr.second == (*iter)) {
-                existingEntry = &(*iter);
+            if (pr.second == *iter) {
+                existingEntry = true;
                 break;
             }
         }
@@ -139,16 +139,20 @@ void FlowTable::GWResolverCb() {
             continue;
         }
 
-        /* If we can't resolve the gateway, put it to the end of the queue.
-         * Routes with unresolvable gateways will constantly trigger this code,
-         * popping and re-pushing. */
         const RouteEntry& re = pr.second;
-        if (resolveGateway(re.gateway, re.interface) < 0) {
-            std::cout << "An error occurred while attempting to resolve " <<
-                    re.address.toString() << "/" <<
-                    re.netmask.toString() << endl;
-            FlowTable::pendingRoutes.push(pr);
-            continue;
+        if (pr.first != RMT_DELETE &&
+                findHost(re.address) == FlowTable::MAC_ADDR_NONE) {
+            /* Host is unresolved. Attempt to resolve it. */
+            if (resolveGateway(re.gateway, re.interface) < 0) {
+                /* If we can't resolve the gateway, put it to the end of the
+                 * queue. Routes with unresolvable gateways will constantly
+                 * loop through this code, popping and re-pushing. */
+                std::cout << "An error occurred while attempting to resolve " <<
+                        re.address.toString() << "/" <<
+                        re.netmask.toString() << endl;
+                FlowTable::pendingRoutes.push(pr);
+                continue;
+            }
         }
 
         if (FlowTable::sendToHw(pr.first, pr.second) < 0) {
