@@ -52,6 +52,13 @@ def ofm_match_tp(ofm, match, src, dst):
     if match & OFPFW_TP_DST: # TCP/UDP destination port.
         ofm.match.tp_dst = dst
 
+def get_cidr_prefix(mask):
+    ''' Convert arbitrary netmask into a CIDR prefix for OpenFlow 1.0'''
+    prefix = bin(int(binascii.b2a_hex(mask), 16))[2:].find('0')
+    if prefix == -1:
+        prefix = 32
+    return prefix
+
 def create_flow_mod(routemod):
     ofm = ofp_flow_mod()
 
@@ -68,13 +75,11 @@ def create_flow_mod(routemod):
     for match in routemod.get_matches():
         match = Match.from_dict(match)
         if match._type == RFMT_IPV4:
+            addr = str(match.get_value()[0])
+            prefix = get_cidr_prefix(inet_aton(match.get_value()[1]))
             ofm_match_dl(ofm, OFPFW_DL_TYPE, ETHERTYPE_IP)
-            # OpenFlow 1.0 doesn't support arbitrary netmasks, so
-            # TODO calculate netmask CIDR prefix better than below...
-            nmprefix = bin(int(binascii.b2a_hex(inet_aton(match.get_value()[1])), 16))[2:].find('0')
-            nmprefix = 32 if nmprefix == -1 else nmprefix
-            ofm_match_nw(ofm, OFPFW_NW_DST_MASK, 0, 0, 0, str(match.get_value()[0]))
-            ofm.match.wildcards &= ~parseCIDR(str(match.get_value()[0]) + "/" + str(nmprefix))[1]
+            ofm_match_nw(ofm, OFPFW_NW_DST_MASK, 0, 0, 0, addr)
+            ofm.match.wildcards &= ~parseCIDR(str(addr) + "/" + str(prefix))[1]
             ofm.match.set_nw_dst(match.get_value()[0])
         elif match._type == RFMT_ETHERNET:
             ofm_match_dl(ofm, OFPFW_DL_DST, match.get_value())
@@ -97,12 +102,15 @@ def create_flow_mod(routemod):
 
     for action in routemod.get_actions():
         action = Action.from_dict(action)
+        value = action.get_value()
         if action._type == RFAT_OUTPUT:
-            ofm.actions.append(ofp_action_output(port = action.get_value()))
+            ofm.actions.append(ofp_action_output(port=(value & 0xFFFF)))
         elif action._type == RFAT_SET_ETH_SRC:
-            ofm.actions.append(ofp_action_dl_addr(type=OFPAT_SET_DL_SRC, dl_addr=EthAddr(action.get_value())))
+            ofm.actions.append(ofp_action_dl_addr(type=OFPAT_SET_DL_SRC,
+                                                  dl_addr=EthAddr(value)))
         elif action._type == RFAT_SET_ETH_DST:
-            ofm.actions.append(ofp_action_dl_addr(type=OFPAT_SET_DL_DST, dl_addr=EthAddr(action.get_value())))
+            ofm.actions.append(ofp_action_dl_addr(type=OFPAT_SET_DL_DST,
+                                                  dl_addr=EthAddr(value)))
         elif action.optional():
             log.debug("Dropping unsupported Action (type: %s)" % option._type)
         else:

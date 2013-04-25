@@ -117,37 +117,41 @@ void FlowTable::GWResolverCb() {
         PendingRoute pr;
         FlowTable::pendingRoutes.wait_and_pop(pr);
 
-        RouteEntry* existingEntry = NULL;
+        bool existingEntry = false;
         std::list<RouteEntry>::iterator iter = FlowTable::routeTable.begin();
         for (; iter != FlowTable::routeTable.end(); iter++) {
-            if (pr.second == (*iter)) {
-                existingEntry = &(*iter);
+            if (pr.second == *iter) {
+                existingEntry = true;
                 break;
             }
         }
 
-        if (existingEntry != NULL && pr.first == RMT_ADD) {
+        if (existingEntry && pr.first == RMT_ADD) {
             fprintf(stdout, "Received duplicate route addition for route %s\n",
-                    existingEntry->address.toString().c_str());
+                    pr.second.address.toString().c_str());
             continue;
         }
 
-        if (existingEntry == NULL && pr.first == RMT_DELETE) {
+        if (!existingEntry && pr.first == RMT_DELETE) {
             fprintf(stdout, "Received route removal for %s but route %s.\n",
                     pr.second.address.toString().c_str(), "cannot be found");
             continue;
         }
 
-        /* If we can't resolve the gateway, put it to the end of the queue.
-         * Routes with unresolvable gateways will constantly trigger this code,
-         * popping and re-pushing. */
         const RouteEntry& re = pr.second;
-        if (resolveGateway(re.gateway, re.interface) < 0) {
-            fprintf(stderr, "An error occurred while %s %s/%s.\n",
-                    "attempting to resolve", re.address.toString().c_str(),
-                    re.netmask.toString().c_str());
-            FlowTable::pendingRoutes.push(pr);
-            continue;
+        if (pr.first != RMT_DELETE &&
+                findHost(re.address) == FlowTable::MAC_ADDR_NONE) {
+            /* Host is unresolved. Attempt to resolve it. */
+            if (resolveGateway(re.gateway, re.interface) < 0) {
+                /* If we can't resolve the gateway, put it to the end of the
+                 * queue. Routes with unresolvable gateways will constantly
+                 * loop through this code, popping and re-pushing. */
+                fprintf(stderr, "An error occurred while %s %s/%s.\n",
+                        "attempting to resolve", re.address.toString().c_str(),
+                        re.netmask.toString().c_str());
+                FlowTable::pendingRoutes.push(pr);
+                continue;
+            }
         }
 
         if (FlowTable::sendToHw(pr.first, pr.second) < 0) {
