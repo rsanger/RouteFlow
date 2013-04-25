@@ -126,9 +126,9 @@ void FlowTable::GWResolverCb() {
             }
         }
 
-        if (existingEntry != NULL && pr.first == RMT_ADD) {
+        if (existingEntry && pr.first == RMT_ADD) {
             std::cout << "Received duplicate route addition for route " <<
-                    existingEntry->address.toString() << endl;
+                    pr.second.address.toString() << endl;
             continue;
         }
 
