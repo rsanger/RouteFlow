@@ -21,6 +21,7 @@ from rflib.types.Option import *
 
 from rftable import *
 from rfroutes import *
+from rfpaths import *
 
 # Register actions
 REGISTER_IDLE = 0
@@ -34,6 +35,7 @@ class RFServer(RFProtocolFactory, IPC.IPCMessageProcessor):
         self.config = RFConfig(configfile)
         self.islconf = RFISLConf(islconffile)
         self.routes = RFRoutes()
+        self.paths = RFPaths()
         self.configured_rfvs = []
         # Logging
         self.log = logging.getLogger("rfserver")
@@ -289,6 +291,54 @@ class RFServer(RFProtocolFactory, IPC.IPCMessageProcessor):
                                                 dp_port, entry.ct_id,
                                                 format_id(entry.dp_id),
                                                 entry.dp_port))
+                self._update_paths(ct_id, dp_id, dp_port, entry)
+
+    def _update_paths(self, ct_id, dp_id, dp_port, entry):
+        vm_id = entry.vm_id
+        patha = self.paths.new_nh_path(vm_id, ct_id, dp_id, entry.ct_id,
+                                       entry.dp_id)
+        pathb = self.paths.new_nh_path(vm_id, entry.ct_id, entry.dp_id,
+                                       ct_id, dp_id)
+        # Add the two switches to the list of unvisited switches.
+        # use paths instead of switches because I need to know the next hop.
+        # then go through the next hops paths and see if any is shorter than
+        # the current path you are using
+        # if you find a faster path, add all switches that you have ISLs to
+        # to the list of unvisited switches with the current switch as the next
+        # hop
+        # iterate through unvisited until there is nothing left
+        # TODO: I might be able to make this faster by only adding the paths
+        # that could be updated. Like if the first two are A and B and the only
+        # path that B adds is the path to A, it is silly to check all of B's
+        # paths to see if they are better than Cs
+        unvisited = [patha, pathb]
+        changed = True
+        while unvisited:
+            uv = unvisited.pop(0)
+            nhpaths = self.paths.get_paths_by_dp(vm_id, uv.nh_ct, uv.nh_dp)
+            newpaths = []
+            for nhp in nhpaths:
+                if nhp.dest_ct != uv.ct_id and nhp.dest_dp != uv.dp_id:
+                    old = self.paths.get_paths_from_to(vm_id, uv.ct_id,
+                                                       uv.dp_id, nhp.dest_ct,
+                                                       nhp.dest_dp)
+                    if old is None or old.distance > nhp.distance + 1:
+                        newpath = self.paths.new_path(vm_id, uv.ct_id,
+                                                      uv.dp_id, nhp.dest_ct,
+                                                      nhp.dest_dp, uv.nh_ct,
+                                                      uv.nh_dp)
+                        changed = True
+                        #TODO: make it use the paths
+            if changed:
+                changed = False
+                newuvs = self.paths.get_isls(vm_id, uv.ct_id, uv.dp_id)
+                for newuv_ct, newuv_dp in newuvs:
+                    if (newuv_ct, newuv_dp) != (uv.ct_id, uv.dp_id):
+                        newuv = self.paths.get_path_from_to(vm_id, newuv_ct,
+                                                            newuv_dp, uv.ct_id,
+                                                            uv.dp_id)
+                        unvisited.append(newuv)
+
 
     def send_datapath_config_message(self, ct_id, dp_id, operation_id):
         rm = RouteMod(RMT_ADD, dp_id)
