@@ -287,13 +287,12 @@ class RFServer(RFProtocolFactory, IPC.IPCMessageProcessor):
                 self.log.info("Registering ISL port and associating to "
                               "remote ISL port (ct_id=%s, dp_id=%s, "
                               "dp_port=%s, rem_ct=%s, rem_id=%s, "
-                              "rem_port=%s)" % (ct_id, format_id(dp_id),
+                              "rem_port=%s)" % (ct_id, dp_id,
                                                 dp_port, entry.ct_id,
-                                                format_id(entry.dp_id),
+                                                entry.dp_id,
                                                 entry.dp_port))
                 self.paths.isl_up(entry.vm_id, entry.ct_id, entry.dp_id, ct_id,
                                   dp_id);
-
 
     def send_datapath_config_message(self, ct_id, dp_id, operation_id):
         rm = RouteMod(RMT_ADD, dp_id)
@@ -374,6 +373,7 @@ class RFServer(RFProtocolFactory, IPC.IPCMessageProcessor):
 
     # DatapathDown methods
     def set_dp_down(self, ct_id, dp_id):
+        vm_id = self.isltable.get_dp_entries(ct_id, dp_id)[0].vm_id
         for entry in self.rftable.get_dp_entries(ct_id, dp_id):
             # For every port registered in that datapath, put it down
             self.set_dp_port_down(entry.ct_id, entry.dp_id, entry.dp_port)
@@ -384,6 +384,10 @@ class RFServer(RFProtocolFactory, IPC.IPCMessageProcessor):
             entry.make_idle(RFISL_IDLE_DP_PORT)
             self.isltable.set_entry(entry)
         self.log.info("Datapath down (dp_id=%s)" % format_id(dp_id))
+        self.paths.dp_down(vm_id, ct_id, dp_id)
+        for dp in self.paths.vms[vm_id].dps.values():
+            for x in dp.paths.values():
+                print(x)
 
     def set_dp_port_down(self, ct_id, dp_id, dp_port):
         entry = self.rftable.get_entry_by_dp_port(ct_id, dp_id, dp_port)
