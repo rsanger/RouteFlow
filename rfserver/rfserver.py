@@ -122,8 +122,6 @@ class RFServer(RFProtocolFactory, IPC.IPCMessageProcessor):
         vm_id = rm.get_id()
 
         self.routes.new_route(rm)
-        print(str(self.routes.routes[vm_id]))
-        print(str(rm))
 
         # Find the output action
         for i, action in enumerate(rm.actions):
@@ -389,9 +387,6 @@ class RFServer(RFProtocolFactory, IPC.IPCMessageProcessor):
             self.isltable.set_entry(entry)
         self.log.info("Datapath down (dp_id=%s)" % format_id(dp_id))
         self.paths.dp_down(vm_id, ct_id, dp_id)
-        for dp in self.paths.vms[vm_id].dps.values():
-            for x in dp.paths.values():
-                print(x)
 
     def set_dp_port_down(self, ct_id, dp_id, dp_port):
         entry = self.rftable.get_entry_by_dp_port(ct_id, dp_id, dp_port)
