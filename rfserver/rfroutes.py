@@ -5,11 +5,15 @@ from rflib.defs import *
 
 class RFRoutes:
     def __init__(self):
+        # contains dicts keyed by vm_id
+        # the dicts contain routemods keyed by RFMT_IPV4 values
+        # TODO: IPV6
         self.routes = {}
         self.routeslock = threading.Lock()
 
     def new_route(self, rm):
         vm_id = rm.get_id()
+        # TODO: this needs to be more resilient
         match = Match.from_dict(rm.get_matches()[0])
         if match._type != RFMT_IPV4:
             # some kind of error here?
