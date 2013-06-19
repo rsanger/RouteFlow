@@ -1,3 +1,11 @@
+from rflib.ipc.RFProtocol import *
+from rflib.ipc.RFProtocolFactory import RFProtocolFactory
+
+from rflib.types.Match import *
+from rflib.types.Action import *
+from rflib.types.Option import *
+
+
 class Path:
     def __init__(self, vm, dp, dest, nh, parent=None):
         self.vm = vm
@@ -6,6 +14,7 @@ class Path:
         self.nh = nh
         self.send_tag = None
         self.match_tag = dp.next_tag()
+        self.outport = dp.isls[(nh.ct_id, nh.dp_id)]
         self.parent = parent
         self.distance = 1
         if parent != None:
@@ -14,6 +23,7 @@ class Path:
             self.distance += parent.distance
         dp.paths[(dest.ct_id, dest.dp_id)] = self
         self.children = set([])
+        self.added = False
 
     # mostly used to delete paths, by setting distance to something
     # effectively infitine
@@ -23,11 +33,11 @@ class Path:
             set_distance(distance + 1)
 
     def delete(self):
+        result = [self]
         if self.parent != None:
             self.parent.children.discard(self)
             self.parent = None
         del self.dp.paths[(self.dest.ct_id, self.dest.dp_id)]
-        result = [self]
         while self.children:
             child = self.children.pop()
             result = result + child.delete()
@@ -59,7 +69,8 @@ class Dpdata:
         self.vm_id = vm_id
         self.ct_id = ct_id
         self.dp_id = dp_id
-        self.isls = set([])
+        #key is connected dp ct_id and dp_id, value is port
+        self.isls = {} 
         self.n_tag = 1
         #paths are keyed by destination
         self.paths = {}
@@ -80,27 +91,31 @@ class RFShortestPaths:
     def __init__(self):
         self.vms = {}
 
-    def isl_up(self, vm_id, ct_id, dp_id, rem_ct, rem_dp):
+    def isl_up(self, vm_id, ct_id1, dp_id1, port1, ct_id2, dp_id2, port2):
+        print("ISL is going UP!")
         if not vm_id in self.vms:
             self.vms[vm_id] = Vmdata(vm_id)
         vm = self.vms[vm_id]
 
-        if not (ct_id, dp_id) in vm.dps:
-            vm.dps[(ct_id, dp_id)] = Dpdata(vm_id, ct_id, dp_id)
-        dp1 = vm.dps[(ct_id, dp_id)]
-        if not (rem_ct, rem_dp) in vm.dps:
-            vm.dps[(rem_ct, rem_dp)] = Dpdata(vm_id, rem_ct, rem_dp)
-        dp2 = vm.dps[(rem_ct, rem_dp)]
-        print(vm.dps)
+        if not (ct_id1, dp_id1) in vm.dps:
+            vm.dps[(ct_id1, dp_id1)] = Dpdata(vm_id, ct_id1, dp_id1)
+        dp1 = vm.dps[(ct_id1, dp_id1)]
+        if not (ct_id2, dp_id2) in vm.dps:
+            vm.dps[(ct_id2, dp_id2)] = Dpdata(vm_id, ct_id2, dp_id2)
+        dp2 = vm.dps[(ct_id2, dp_id2)]
 
-        dp1.isls.add((rem_ct, rem_dp))
-        dp2.isls.add((ct_id, dp_id))
+        dp1.isls[(ct_id2, dp_id2)] = port1
+        dp2.isls[(ct_id1, dp_id1)] = port2
+
+        # paths to add and delete from switches when completed
+        padd = set([])
+        pdel = []
 
         # delete any existing path between these switches
-        if (rem_ct, rem_dp) in dp1.paths:
-            dp1.paths[(rem_ct, rem_dp)].delete()
-        if (ct_id, dp_id) in dp2.paths:
-            dp2.paths[(ct_id, dp_id)].delete()
+        if (ct_id2, dp_id2) in dp1.paths:
+            pdel +=  dp1.paths[(ct_id2, dp_id2)].delete()
+        if (ct_id1, dp_id1) in dp2.paths:
+            pdel += dp2.paths[(ct_id1, dp_id1)].delete()
 
         # generate new paths
         # Add the two new paths to the list of paths that may be extended.
@@ -116,11 +131,8 @@ class RFShortestPaths:
         # paths to see if they are better than Cs
         patha = Path(vm, dp1, dp2, dp2, None)
         pathb = Path(vm, dp2, dp1, dp1, None)
+        padd.update([patha, pathb])
         
-        # paths to add and delete from switches when completed
-        padd = []
-        pdel = []
-
         # paths that may be extended
         unvisited = [patha, pathb]
 
@@ -132,6 +144,7 @@ class RFShortestPaths:
                     if old != None:
                         pdel += old.delete()
                     newpath = Path(vm, dp2, nhp.dest, nhp.dp, nhp)
+                    padd.add(newpath)
                     unvisited.append(newpath)
         for nhp in dp2.paths.values():
             if nhp.dest != dp1:
@@ -140,20 +153,26 @@ class RFShortestPaths:
                     if old != None:
                         pdel += old.delete()
                     newpath = Path(vm, dp1, nhp.dest, nhp.dp, nhp)
+                    padd.add(newpath)
                     unvisited.append(newpath)
 
         # now iterate through the new paths, extending when possible
         while unvisited:
             uv = unvisited.pop(0)
-            for rem_ct_id, rem_dp_id in uv.dp.isls:
-                rem_dp = vm.dps[(rem_ct_id, rem_dp_id)]
-                if rem_dp != uv.dest:
-                    old = rem_dp.path_to(uv.dest.ct_id, uv.dest.dp_id)
+            for curr_ct_id, curr_dp_id in uv.dp.isls.keys():
+                curr_dp = vm.dps[(curr_ct_id, curr_dp_id)]
+                if curr_dp != uv.dest:
+                    old = curr_dp.path_to(uv.dest.ct_id, uv.dest.dp_id)
                     if old == None or old.distance > uv.distance + 1:
                         if old != None:
                             pdel += old.delete()
-                        newpath = Path(vm, rem_dp, uv.dest, uv.dp, uv)
+                        newpath = Path(vm, curr_dp, uv.dest, uv.dp, uv)
+                        padd.discard(newpath)
+                        padd.add(newpath)
                         unvisited.append(newpath)
+
+        self.paths_to_routemod(padd, False)
+        self.paths_to_routemod(pdel, True)
 
 
     def dp_down(self, vm_id, ct_id, dp_id):
@@ -161,18 +180,18 @@ class RFShortestPaths:
         dp = vm.dps[(ct_id, dp_id)]
 
         #the paths to add and delete from switches when completed
-        padd = []
+        padd = set([])
         pdel = []
 
         distances = {}
 
         # delete all isls and all paths to the dp
-        for rem_ct_id, rem_dp_id in dp.isls:
+        for rem_ct_id, rem_dp_id in dp.isls.keys():
             rem_dp = vm.dps[(rem_ct_id, rem_dp_id)]
             for path in rem_dp.paths.values():
                 if path.dest == dp:
                    pdel += path.delete()
-            rem_dp.isls.remove((ct_id, dp_id))
+            del rem_dp.isls[(ct_id, dp_id)]
 
         dp.isls.clear()
 
@@ -189,26 +208,61 @@ class RFShortestPaths:
             # the paths that may be extended
             unvisited = []
             # add the shortest paths to each destination
-            for (rem_ct_id, rem_dp_id) in dest_dp.isls:
+            for (rem_ct_id, rem_dp_id) in dest_dp.isls.keys():
                 rem_dp = vm.dps[(rem_ct_id, rem_dp_id)]
                 unvisited.append(rem_dp.path_to(dest_ct_id, dest_dp_id))
-                if rem_dp.path_to(dest_ct_id, dest_dp_id) == None:
-                    print("why is this none: " + str(rem_dp.dp_id) + ", " + str(dest_dp_id))
 
             while unvisited:
                 uv = unvisited.pop(0)
+                unvisited += list(uv.children)
                 # shortest paths, so the new path couldnt be shorter than the
                 # existing path
-                # ok at some point I am pushing a nonetype onto unvisited
-                if uv.distance >= distance:
-                    for curr_ct_id, curr_dp_id in uv.dp.isls:
-                        curr_dp = vm.dps[(curr_ct_id, curr_dp_id)]
-                        # I have deleted all the old paths, so look for dps
-                        # without any path to add
-                        if curr_dp != uv.dest and\
-                           curr_dp.path_to(dest_ct_id, dest_dp_id) == None:
+                if uv.distance < distance:
+                    continue
+
+                for curr_ct_id, curr_dp_id in uv.dp.isls.keys():
+                    curr_dp = vm.dps[(curr_ct_id, curr_dp_id)]
+                    if curr_dp != uv.dest:
+                        old = curr_dp.path_to(dest_ct_id, dest_dp_id)
+                        if old == None or old.distance > uv.distance + 1:
+                            if old != None:
+                              pdel += old.delete()
                             newpath = Path(vm_id, curr_dp, dest_dp, uv.dp, uv)
-                            padd.append(newpath)
-                unvisited += list(uv.children)
+                            padd.discard(newpath)
+                            padd.add(newpath)
+                            unvisited.append(newpath)
         #some kind of check that everything has actually been connected up
         #send all the routemods
+        self.paths_to_routemod(padd, False)
+        self.paths_to_routemod(pdel, True)
+
+    def paths_to_routemod(self, paths, del_bool):
+        rms = []
+        for path in paths:
+            if del_bool and path.added:
+                rm = RouteMod(RMT_DELETE, path.dp.dp_id)
+            elif del_bool:
+                # if this is a path that is being deleted but has not been
+                # added, then there is no need to delete it
+                continue
+            else:
+                rm = RouteMod(RMT_ADD, path.dp.dp_id)
+                path.added = True
+            rm.add_option(Option.CT_ID(path.dp.ct_id))
+            rm.add_option(Option.PRIORITY(PRIORITY_HIGHEST))
+            #TODO: This needs to differentiate MPLS packets received via ISLs
+            #      and MPLS packets received from external ports
+            #      that may mean that every time an ISL comes up I need to send
+            #      new routemods with new matches. Though assuming of1.2 I can
+            #      cope with this I think.
+            #      This could be fixed nicely with tables, when multiple table
+            #      support is added
+            rm.add_match(Match.MPLS(path.match_tag))
+            rm.add_action(Action.OUTPUT(path.outport))
+            if path.send_tag == None:
+                rm.add_action(Action.POP_MPLS())
+            else:
+                rm.add_action(Action.SWAP_MPLS(path.send_tag))
+            print(rm)
+            rms.append(rm)
+        return rms

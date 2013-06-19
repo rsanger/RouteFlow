@@ -289,8 +289,8 @@ class RFServer(RFProtocolFactory, IPC.IPCMessageProcessor):
                                                 dp_port, entry.ct_id,
                                                 entry.dp_id,
                                                 entry.dp_port))
-                self.paths.isl_up(entry.vm_id, entry.ct_id, entry.dp_id, ct_id,
-                                  dp_id);
+                self.paths.isl_up(entry.vm_id, entry.ct_id, entry.dp_id,
+                                  entry.dp_port, ct_id, dp_id, dp_port);
                 for dp in self.paths.vms[entry.vm_id].dps.values():
                     for x in dp.paths.values():
                         print(x)
