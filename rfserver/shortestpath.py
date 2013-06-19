@@ -119,16 +119,13 @@ class RFShortestPaths:
 
         # generate new paths
         # Add the two new paths to the list of paths that may be extended.
-        # Then check for any paths 
-        # the current path you are using
-        # if you find a faster path, add all switches that you have ISLs to
-        # to the list of unvisited switches with the current switch as the next
-        # hop
+        # check all isls of that path.dp for a path that may be
+        # improved, if found, add it to unvisited
+        # because paths are removed from the head and added to the tail,
+        # paths will be visited in order they are created, IE from shortest
+        # to longest. Therefore a new path will never be faster than an
+        # already created new path
         # iterate through unvisited until there is nothing left
-        # TODO: I might be able to make this faster by only adding the paths
-        # that could be updated. Like if the first two are A and B and the only
-        # path that B adds is the path to A, it is silly to check all of B's
-        # paths to see if they are better than Cs
         patha = Path(vm, dp1, dp2, dp2, None)
         pathb = Path(vm, dp2, dp1, dp1, None)
         padd.update([patha, pathb])
@@ -224,9 +221,10 @@ class RFShortestPaths:
                     curr_dp = vm.dps[(curr_ct_id, curr_dp_id)]
                     if curr_dp != uv.dest:
                         old = curr_dp.path_to(dest_ct_id, dest_dp_id)
-                        if old == None or old.distance > uv.distance + 1:
-                            if old != None:
-                              pdel += old.delete()
+                        # all old paths have been deleted, and paths will be
+                        # generated in order of shortest to longest, therefore
+                        # only empty paths need to be replaced
+                        if old == None:
                             newpath = Path(vm_id, curr_dp, dest_dp, uv.dp, uv)
                             padd.discard(newpath)
                             padd.add(newpath)
