@@ -75,20 +75,6 @@ class Dpdata:
         self.n_tag += 1
         return result
 
-    # deletes a path
-    # updates children to have effectively infinite distance
-    # children are removed one at a time so routemods can be generated to
-    # remove them from switches
-    def remove_path(self, dest_ct, dest_dp):
-        path = self.paths[(dest_ct, dest_id)]
-        if path.parent != None:
-            path.parent.children.remove(path)
-        path.parent = None
-        path.set_distance(1000)
-        for p in path.children:
-            p.parent = None
-        del self.paths[(dest_ct, dest_dp)]
-
 
 class RFShortestPaths:
     def __init__(self):
