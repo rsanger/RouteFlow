@@ -92,7 +92,6 @@ class RFShortestPaths:
         self.vms = {}
 
     def isl_up(self, vm_id, ct_id1, dp_id1, port1, ct_id2, dp_id2, port2):
-        print("ISL is going UP!")
         if not vm_id in self.vms:
             self.vms[vm_id] = Vmdata(vm_id)
         vm = self.vms[vm_id]
@@ -119,6 +118,8 @@ class RFShortestPaths:
 
         # generate new paths
         # Add the two new paths to the list of paths that may be extended.
+        # check each of the two dps for paths that can be improved
+        # add any improved paths to unvisited
         # check all isls of that path.dp for a path that may be
         # improved, if found, add it to unvisited
         # because paths are removed from the head and added to the tail,
@@ -168,8 +169,7 @@ class RFShortestPaths:
                         padd.add(newpath)
                         unvisited.append(newpath)
 
-        self.paths_to_routemod(padd, False)
-        self.paths_to_routemod(pdel, True)
+        return (padd, pdel)
 
 
     def dp_down(self, vm_id, ct_id, dp_id):
@@ -178,7 +178,7 @@ class RFShortestPaths:
 
         #the paths to add and delete from switches when completed
         padd = set([])
-        pdel = []
+        pdel = set([])
 
         distances = {}
 
@@ -187,7 +187,7 @@ class RFShortestPaths:
             rem_dp = vm.dps[(rem_ct_id, rem_dp_id)]
             for path in rem_dp.paths.values():
                 if path.dest == dp:
-                   pdel += path.delete()
+                    pdel.update(path.delete())
             del rem_dp.isls[(ct_id, dp_id)]
 
         dp.isls.clear()
@@ -196,7 +196,7 @@ class RFShortestPaths:
         # must be at least as long as the path deleted
         for path in dp.paths.values():
             distances[(path.dest.ct_id, path.dest.dp_id)] = path.distance
-            pdel += path.delete()
+            pdel.update(path.delete())
 
         #find the new paths
         for (dest_ct_id, dest_dp_id) in distances.keys():
@@ -229,10 +229,18 @@ class RFShortestPaths:
                             padd.discard(newpath)
                             padd.add(newpath)
                             unvisited.append(newpath)
-        #some kind of check that everything has actually been connected up
-        #send all the routemods
-        self.paths_to_routemod(padd, False)
-        self.paths_to_routemod(pdel, True)
+
+        # dont send routemods to the switch that just got taken down
+        pdontdel = set([])
+        for pd in pdel:
+            print(pd)
+            if pd.dp == dp:
+                pdontdel.add(pd)
+
+        pdel -= pdontdel
+        for pd in pdel:
+            print(pd)
+        return (padd, pdel - pdontdel)
 
     def paths_to_routemod(self, paths, del_bool):
         rms = []
