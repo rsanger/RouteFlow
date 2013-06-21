@@ -54,6 +54,8 @@ def add_command(flow_mod, mod):
     pass
   elif mod == RMT_DELETE:
     flow_mod.command = flow_mod.datapath.ofproto.OFPFC_DELETE_STRICT
+  elif mod == RMT_MODIFY:
+    flow_mod.command = flow_mod.datapath.ofproto.OFPFC_MODIFY_STRICT
 
 def add_matches(flow_mod, matches):
   for m in matches:
