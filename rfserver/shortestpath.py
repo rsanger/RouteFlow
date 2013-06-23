@@ -63,6 +63,7 @@ class Vmdata:
     def __init__(self, vm_id):
         self.vm_id = vm_id
         self.dps = {}
+        self.root_dp = None
 
 class Dpdata:
     def __init__(self, vm_id, ct_id, dp_id):
@@ -74,6 +75,7 @@ class Dpdata:
         self.n_tag = 1
         #paths are keyed by destination
         self.paths = {}
+        self.up = False 
 
     def path_to(self, ct_id, dp_id):
         result = None
@@ -94,6 +96,7 @@ class RFShortestPaths:
     def isl_up(self, vm_id, ct_id1, dp_id1, port1, ct_id2, dp_id2, port2):
         if not vm_id in self.vms:
             self.vms[vm_id] = Vmdata(vm_id)
+            
         vm = self.vms[vm_id]
 
         if not (ct_id1, dp_id1) in vm.dps:
@@ -102,6 +105,17 @@ class RFShortestPaths:
         if not (ct_id2, dp_id2) in vm.dps:
             vm.dps[(ct_id2, dp_id2)] = Dpdata(vm_id, ct_id2, dp_id2)
         dp2 = vm.dps[(ct_id2, dp_id2)]
+
+        # Determine if there is a connection between these dps and the root dp
+        # If there is no root dp for this vm, then set dp1 as root dp
+        if vm.root_dp == None:
+            vm.root_dp = dp1
+            dp1.up = True
+            dp2.up = True
+        elif dp1.up:
+            dp2.up = True
+        elif dp2.up:
+            dp1.up = True
 
         dp1.isls[(ct_id2, dp_id2)] = port1
         dp2.isls[(ct_id1, dp_id1)] = port2
@@ -176,6 +190,13 @@ class RFShortestPaths:
         vm = self.vms[vm_id]
         dp = vm.dps[(ct_id, dp_id)]
 
+        # Check if this is the last dp up for this VM
+        dp.up = False
+        if vm.root_dp == dp:
+            for rdp in vm.dps.values():
+                if rdp.up:
+                    vm.root_dp = rdp
+
         #the paths to add and delete from switches when completed
         padd = set([])
         pdel = set([])
@@ -233,14 +254,20 @@ class RFShortestPaths:
         # dont send routemods to the switch that just got taken down
         pdontdel = set([])
         for pd in pdel:
-            print(pd)
             if pd.dp == dp:
                 pdontdel.add(pd)
 
         pdel -= pdontdel
-        for pd in pdel:
-            print(pd)
         return (padd, pdel - pdontdel)
+
+    def dp_is_down(self, vm_id, ct_id, dp_id):
+        result = False
+        if vm_id in self.vms:
+            if (ct_id, dp_id) in self.vms[vm_id].dps:
+                dp = self.vms[vm_id].dps[ct_id, dp_id]
+                if not dp.up:
+                    result = True
+        return result
 
     def paths_to_routemod(self, paths, del_bool):
         rms = []
@@ -269,6 +296,5 @@ class RFShortestPaths:
                 rm.add_action(Action.POP_MPLS())
             else:
                 rm.add_action(Action.SWAP_MPLS(path.send_tag))
-            print(rm)
             rms.append(rm)
         return rms
