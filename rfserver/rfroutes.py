@@ -30,7 +30,9 @@ class RFRoutes:
                 del self.routes[(ct_id, dp_id, dp_port)][match.get_value()]
 
     def get_routes(self, ct_id, dp_id, dp_port):
-        result = self.routes[(ct_id, dp_id, dp_port)].values()
+        result = []
+        if (ct_id, dp_id, dp_port) in self.routes:
+            result = self.routes[(ct_id, dp_id, dp_port)].values()
         return result
 
     # TODO: make this work properly
