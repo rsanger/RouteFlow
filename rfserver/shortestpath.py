@@ -14,7 +14,8 @@ class Path:
         self.nh = nh
         self.send_tag = None
         self.match_tag = dp.next_tag()
-        self.outport = dp.isls[(nh.ct_id, nh.dp_id)]
+        self.outport, self.eth_src = dp.isls[(nh.ct_id, nh.dp_id)]
+        x, self.eth_dst = nh.isls[(dp.ct_id, dp.dp_id)]
         self.parent = parent
         self.distance = 1
         if parent != None:
@@ -70,6 +71,7 @@ class Dpdata:
         self.vm_id = vm_id
         self.ct_id = ct_id
         self.dp_id = dp_id
+        self.macs = {}
         #key is connected dp ct_id and dp_id, value is port
         self.isls = {} 
         self.n_tag = 1
@@ -93,7 +95,8 @@ class RFShortestPaths:
     def __init__(self):
         self.vms = {}
 
-    def isl_up(self, vm_id, ct_id1, dp_id1, port1, ct_id2, dp_id2, port2):
+    def isl_up(self, vm_id, ct_id1, dp_id1, port1, mac1, ct_id2, dp_id2,
+                port2, mac2):
         if not vm_id in self.vms:
             self.vms[vm_id] = Vmdata(vm_id)
             
@@ -117,8 +120,8 @@ class RFShortestPaths:
         elif dp2.up:
             dp1.up = True
 
-        dp1.isls[(ct_id2, dp_id2)] = port1
-        dp2.isls[(ct_id1, dp_id1)] = port2
+        dp1.isls[(ct_id2, dp_id2)] = (port1, mac1)
+        dp2.isls[(ct_id1, dp_id1)] = (port2, mac2)
 
         # paths to add and delete from switches when completed
         padd = set([])
