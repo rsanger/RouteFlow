@@ -160,6 +160,10 @@ class RFServer(RFProtocolFactory, IPC.IPCMessageProcessor):
 
                     self.routes.new_route(rm, entry.ct_id, entry.dp_id,
                                           entry.dp_port)
+                   
+                    print("current routes:")
+                    for r in self.routes.get_all_routes():
+                        print(str(r))
 
                     entries = self.rftable.get_entries(ct_id=entry.ct_id,
                                                         dp_id=entry.dp_id)
@@ -168,22 +172,25 @@ class RFServer(RFProtocolFactory, IPC.IPCMessageProcessor):
                     self._send_rm_with_matches(rm, entries, entry.dp_port)
 
                     # send the route to other dps 
-                    for rem_ct_id, rem_dp_id in self.paths.vms[vm_id].dps[entry.ct_id,entry.dp_id].isls.keys():
-                        dp = self.paths.vms[vm_id].dps[rem_ct_id, rem_dp_id]
+                    for dp in self.paths.vms[vm_id].dps.values():
+                        if dp.dp_id == entry.dp_id or not dp.up:
+                          continue
                         path = dp.path_to(entry.ct_id, entry.dp_id)
                         rm.set_options(rm.get_options()[:-1])
-                        rm.add_option(Option.CT_ID(rem_ct_id))
-                        rm.set_id(rem_dp_id)
+                        rm.add_option(Option.CT_ID(dp.ct_id))
+                        rm.set_id(dp.dp_id)
                         rm.set_actions(None)
                         #print(rem_dp_id)
                         #print(path)
                         rm.set_actions(None)
                         outport = path.outport
                         rm.add_action(Action.OUTPUT(outport))
+                        rm.add_action(Action.SET_ETH_SRC(path.eth_src))
+                        rm.add_action(Action.SET_ETH_DST(path.eth_dst))
                         if path.send_tag != None:
                             rm.add_action(Action.PUSH_MPLS(path.send_tag))
-                        entries = self.rftable.get_entries(ct_id=rem_ct_id,
-                                                            dp_id=rem_dp_id)
+                        entries = self.rftable.get_entries(ct_id=dp.ct_id,
+                                                            dp_id=dp.dp_id)
                         #print(rm)
                         self._send_rm_with_matches(rm, entries, path.outport)
                     return
@@ -201,6 +208,8 @@ class RFServer(RFProtocolFactory, IPC.IPCMessageProcessor):
                     rm.add_match(Match.IN_PORT(entry.dp_port))
                     self.ipc.send(RFSERVER_RFPROXY_CHANNEL,
                                   str(entry.ct_id), rm)
+                    print("sending mod")
+                    print(rm)
                     rm.set_matches(rm.get_matches()[:-2])
 
     # DatapathPortRegister methods
@@ -307,16 +316,20 @@ class RFServer(RFProtocolFactory, IPC.IPCMessageProcessor):
                                                           entry.ct_id,
                                                           entry.dp_id,
                                                           entry.dp_port,
+                                                          entry.eth_addr,
                                                           ct_id, dp_id,
-                                                          dp_port);
+                                                          dp_port,
+                                                          entry.rem_eth_addr);
                 if dpwasdown and not\
                    self.paths.dp_is_down(entry.vm_id, ct_id, dp_id):
                     up_ct = ct_id
                     up_dp = dp_id
+                    print("switch coming up: " + str(dp_id))
                 elif edpwasdown and not\
                      self.paths.dp_is_down(entry.vm_id, entry.ct_id, entry.dp_id):
                     up_ct = entry.ct_id
                     up_dp = entry.dp_id
+                    print("switch coming up" + str(entry.dp_id))
 
                 self.send_topology_change(newpaths, delpaths, entry.vm_id,
                                           up_ct, up_dp)
@@ -338,6 +351,17 @@ class RFServer(RFProtocolFactory, IPC.IPCMessageProcessor):
                 #print(rm)
                 self.ipc.send(RFSERVER_RFPROXY_CHANNEL, str(path.dp.ct_id), rm)
 
+            # change all the old routes to use the new paths
+            for path in newpaths:
+                routes = self.routes.get_routes_to(path.dp.ct_id,
+                                                    path.dp.dp_id)
+                for rm in routes:
+                    # yeah this doesnt work thats for sure..
+                    rm.set_mod(RMT_MODIFY)
+                    entries = self.rftable.get_entries(ct_id=path.dp.ct_id,
+                                                       dp_id=path.dp.dp_id)
+                    self._send_rm_with_matches(rm, entries, path.outport)
+
             # if this is a new switch coming up, add routes to that switch
             if ct_id != None:
                 # get all the path information
@@ -345,32 +369,27 @@ class RFServer(RFProtocolFactory, IPC.IPCMessageProcessor):
                 # add the routes
                 # this can probably be done with a method?
                 for entry in self.rftable.get_entries(vm_id=vm_id):
+                    print("found an entry")
                     for rm in self.routes.get_routes(entry.ct_id, entry.dp_id,
                                                       entry.dp_port):
+                        print("reloading routemod " + str(rm))
                         if entry.ct_id == ct_id and entry.dp_id == dp_id:
-                            # theoretically this shouldnt happen, but here just
+                            # theoretically this shouldnt happen, but here
                             # for safety
                             outport = entry.dp_port
                         else:
                             path = dp.path_to(entry.ct_id, entry.dp_id)
+                            rm.set_id(dp_id)
                             rm.set_actions(None)
                             outport = path.outport
                             rm.add_action(Action.OUTPUT(outport))
+                            rm.add_action(Action.SET_ETH_SRC(path.eth_src))
+                            rm.add_action(Action.SET_ETH_DST(path.eth_dst))
                             if path.send_tag != None:
                                 rm.add_action(Action.PUSH_MPLS(path.send_tag))
                         entries = self.rftable.get_entries(ct_id=ct_id,
                                                             dp_id=dp_id)
                         self._send_rm_with_matches(rm, entries, outport)
-
-            # change all the old routes to use the new paths
-            for path in newpaths:
-                routes = self.routes.get_routes_to(path.dp.ct_id,
-                                                    path.dp.dp_id)
-                for rm in routes:
-                   rm.set_mod(RMT_MODIFY)
-                   entries = self.rftable.get_entries(ct_id=path.dp.ct_id,
-                                                      dp_id=path.dp.dp_id)
-                   self._send_rm_with_matches(rm, entries, path.outport)
 
         # delete the old paths
         for path in delpaths:
@@ -385,6 +404,8 @@ class RFServer(RFProtocolFactory, IPC.IPCMessageProcessor):
         if add_bool:
             rm = RouteMod(RMT_ADD, path.dp.dp_id)
             rm.add_action(Action.OUTPUT(path.outport))
+            rm.add_action(Action.SET_ETH_SRC(path.eth_src))
+            rm.add_action(Action.SET_ETH_DST(path.eth_dst))
             if path.send_tag == None:
                 rm.add_action(Action.POP_MPLS())
             else:
@@ -475,7 +496,11 @@ class RFServer(RFProtocolFactory, IPC.IPCMessageProcessor):
 
     # DatapathDown methods
     def set_dp_down(self, ct_id, dp_id):
-        vm_id = self.isltable.get_dp_entries(ct_id, dp_id)[0].vm_id
+        try:
+            vm_id = self.isltable.get_dp_entries(ct_id, dp_id)[0].vm_id
+        except:
+            vm_id = self.isltable.get_entries(rem_ct=ct_id,
+                                              rem_dp=dp_id)[0].vm_id
         for entry in self.rftable.get_dp_entries(ct_id, dp_id):
             # For every port registered in that datapath, put it down
             self.set_dp_port_down(entry.ct_id, entry.dp_id, entry.dp_port)
@@ -515,6 +540,29 @@ class RFServer(RFProtocolFactory, IPC.IPCMessageProcessor):
             # If the association is valid, activate it
             entry.activate(vs_id, vs_port)
             self.rftable.set_entry(entry)
+            # send routemods matching this port
+            with self.pathslock:
+                dp = self.paths.vms[vm_id].dps[(entry.ct_id, entry.dp_id)]
+                for e in self.rftable.get_entries(vm_id=vm_id):
+                    print("found an entry")
+                    for rm in self.routes.get_routes(e.ct_id, e.dp_id,
+                                                      e.dp_port):
+                        print("reloading ext routemod " + str(rm))
+                        if e.ct_id == entry.ct_id and entry.dp_id == e.dp_id:
+                            pass
+                        else:
+                            rm.add_option(Option.CT_ID(entry.ct_id))
+                            rm.set_id(entry.dp_id)
+                            path = dp.path_to(e.ct_id, e.dp_id)
+                            rm.set_actions(None)
+                            outport = path.outport
+                            rm.add_action(Action.OUTPUT(outport))
+                            rm.add_action(Action.SET_ETH_SRC(path.eth_src))
+                            rm.add_action(Action.SET_ETH_DST(path.eth_dst))
+                            if path.send_tag != None:
+                                rm.add_action(Action.PUSH_MPLS(path.send_tag))
+                        self._send_rm_with_matches(rm, [entry])
+
             msg = DataPlaneMap(ct_id=entry.ct_id,
                                dp_id=entry.dp_id, dp_port=entry.dp_port,
                                vs_id=vs_id, vs_port=vs_port)
