@@ -1,7 +1,9 @@
-import pymongo as mongo
-
 from rflib.defs import *
-from rflib.ipc.MongoIPC import format_address
+
+if DB_TYPE == 'memory':
+    from MemoryTable import MemoryTable as TableBase
+else:
+    from MongoTable import MongoTable as TableBase
 
 RFENTRY_IDLE_VM_PORT = 1
 RFENTRY_IDLE_DP_PORT = 2
@@ -16,8 +18,7 @@ RFCONFIGENTRY = 1
 RFISLCONFENTRY = 2
 RFISLENTRY = 3
 
-
-class MongoTableEntryFactory:
+class EntryFactory:
     @staticmethod
     def make(type_):
         if type_ == RFENTRY:
@@ -29,34 +30,25 @@ class MongoTableEntryFactory:
         elif type_ == RFISLCONFENTRY:
             return RFISLConfEntry()
 
-
-class MongoTable:
-    def __init__(self, address, name, entry_type):
-        self.address = format_address(address)
-        self.connection = mongo.Connection(*self.address)
-        self.data = self.connection[MONGO_DB_NAME][name]
+class EntryTable(TableBase):
+    def __init__(self, name, entry_type):
+        TableBase.__init__(self, name)
         self.entry_type = entry_type
 
     def get_entries(self, **kwargs):
-        for (k, v) in kwargs.items():
-            kwargs[k] = str(v)
-        results = self.data.find(kwargs)
+        results = self.get_dicts(**kwargs)
         entries = []
         for result in results:
-            entry = MongoTableEntryFactory.make(self.entry_type)
+            entry = EntryFactory.make(self.entry_type)
             entry.from_dict(result)
             entries.append(entry)
         return entries
 
     def set_entry(self, entry):
-        # TODO: enforce (*_id, *_port) uniqueness restriction
-        entry.id = self.data.save(entry.to_dict())
+        entry.id = self.set_dict(entry.to_dict())
 
     def remove_entry(self, entry):
-        self.data.remove(entry.id)
-
-    def clear(self):
-        self.data.remove()
+        self.remove_id(entry.id)
 
     def __str__(self):
         s = ""
@@ -65,9 +57,9 @@ class MongoTable:
         return s.strip("\n")
 
 
-class RFTable(MongoTable):
-    def __init__(self, address=MONGO_ADDRESS):
-        MongoTable.__init__(self, address, RFTABLE_NAME, RFENTRY)
+class RFTable(EntryTable):
+    def __init__(self):
+        EntryTable.__init__(self, RFTABLE_NAME, RFENTRY)
 
     def get_entry_by_vm_port(self, vm_id, vm_port):
         result = self.get_entries(vm_id=vm_id,
@@ -98,9 +90,9 @@ class RFTable(MongoTable):
         return bool(self.get_dp_entries(ct_id, dp_id))
 
 
-class RFConfig(MongoTable):
-    def __init__(self, ifile, address=MONGO_ADDRESS):
-        MongoTable.__init__(self, address, RFCONFIG_NAME, RFCONFIGENTRY)
+class RFConfig(EntryTable):
+    def __init__(self, ifile):
+        EntryTable.__init__(self, RFCONFIG_NAME, RFCONFIGENTRY)
         # TODO: perform validation of config
         configfile = file(ifile)
         lines = configfile.readlines()[1:]
@@ -125,10 +117,9 @@ class RFConfig(MongoTable):
             return None
         return result[0]
 
-
-class RFISLTable(MongoTable):
-    def __init__(self, address=MONGO_ADDRESS):
-        MongoTable.__init__(self, address, RFISL_NAME, RFISLENTRY)
+class RFISLTable(EntryTable):
+    def __init__(self):
+        EntryTable.__init__(self, RFISL_NAME, RFISLENTRY)
 
     def get_entry_by_addr(self, ct_id, dp_id, dp_port, eth_addr):
         result = self.get_entries(ct_id=ct_id, dp_id=dp_id, dp_port=dp_port,
@@ -150,10 +141,9 @@ class RFISLTable(MongoTable):
     def is_dp_registered(self, ct_id, dp_id):
         return bool(self.get_dp_entries(ct_id, dp_id))
 
-
-class RFISLConf(MongoTable):
-    def __init__(self, ifile, address=MONGO_ADDRESS):
-        MongoTable.__init__(self, address, RFISLCONF_NAME, RFISLCONFENTRY)
+class RFISLConf(EntryTable):
+    def __init__(self, ifile):
+        EntryTable.__init__(self, RFISLCONF_NAME, RFISLCONFENTRY)
         # TODO: perform validation of config
         try:
             internalfile = file(ifile)
@@ -181,8 +171,7 @@ def load_from_dict(src, obj, attr):
 
 
 def pack_into_dict(dest, obj, attr):
-    value = getattr(obj, attr)
-    dest[attr] = "" if value is None else str(value)
+    dest[attr] = getattr(obj, attr)
 
 
 class RFEntry:
@@ -261,22 +250,17 @@ class RFEntry:
                "dp_id: %s\ndp_port: %s\n"\
                "vs_id: %s\nvs_port: %s\n"\
                "eth_addr: %s\nct_id: %s\n"\
-               "status:%s" % (str(self.vm_id),
-                              str(self.vm_port),
-                              str(self.dp_id),
-                              str(self.dp_port),
-                              str(self.vs_id),
-                              str(self.vs_port),
-                              str(self.eth_addr),
-                              str(self.ct_id),
-                              str(self.get_status()))
+               "status:%s" % (self.vm_id,
+                              self.vm_port,
+                              self.dp_id,
+                              self.dp_port,
+                              self.vs_id,
+                              self.vs_port,
+                              self.eth_addr,
+                              self.ct_id,
+                              self.get_status())
 
     def from_dict(self, data):
-        for k, v in data.items():
-            if str(v) is "":
-                data[k] = None
-            elif k != "_id" and k != "eth_addr":  # All our data is int
-                data[k] = int(v)
         self.id = data["_id"]
         load_from_dict(data, self, "vm_id")
         load_from_dict(data, self, "vm_port")
@@ -321,9 +305,9 @@ class RFISLEntry:
         return "vm_id: %s "\
                "ct_id: %s dp_id: %s dp_port: %s eth_addr: %s"\
                "rem_ct: %s rem_id: %s rem_port: %s rem_addr: %s"\
-               % (str(self.vm_id), str(self.ct_id),
-                  str(self.dp_id), str(self.dp_port), self.eth_addr,
-                  str(self.rem_ct), str(self.rem_id), str(self.rem_port),
+               % (self.vm_id, self.ct_id,
+                  self.dp_id, self.dp_port, self.eth_addr,
+                  self.rem_ct, self.rem_id, self.rem_port,
                   self.rem_eth_addr)
 
     def make_idle(self, type_):
@@ -375,11 +359,6 @@ class RFISLEntry:
             return RFISL_ACTIVE
 
     def from_dict(self, data):
-        for k, v in data.items():
-            if str(v) is "":
-                data[k] = None
-            elif k != "_id" and not k.endswith("eth_addr"):
-                data[k] = int(v)
         self.id = data["_id"]
         load_from_dict(data, self, "vm_id")
         load_from_dict(data, self, "ct_id")
@@ -426,20 +405,15 @@ class RFISLConfEntry:
         return "vm_id: %s "\
                "ct_id: %s dp_id: %s dp_port: %s eth_addr: %s"\
                "rem_ct: %s rem_id: %s rem_port: %s rem_addr: %s"\
-               % (str(self.vm_id), str(self.ct_id),
-                  str(self.dp_id), str(self.dp_port), self.eth_addr,
-                  str(self.rem_ct), str(self.rem_id), str(self.rem_port),
+               % (self.vm_id, self.ct_id,
+                  self.dp_id, self.dp_port, self.eth_addr,
+                  self.rem_ct, self.rem_id, self.rem_port,
                   self.rem_eth_addr)
 
     def get_status(self):
         return RFENTRY_ACTIVE
 
     def from_dict(self, data):
-        for k, v in data.items():
-            if str(v) is "":
-                data[k] = None
-            elif k != "_id" and not k.endswith("eth_addr"):
-                data[k] = int(v)
         self.id = data["_id"]
         load_from_dict(data, self, "vm_id")
         load_from_dict(data, self, "ct_id")
@@ -480,16 +454,11 @@ class RFConfigEntry:
     def __str__(self):
         return "vm_id: %s vm_port: %s "\
                "dp_id: %s dp_port: %s "\
-               "ct_id: %s" % (str(self.vm_id), str(self.vm_port),
-                              str(self.dp_id), str(self.dp_port),
-                              str(self.ct_id))
+               "ct_id: %s" % (self.vm_id, self.vm_port,
+                              self.dp_id, self.dp_port,
+                              self.ct_id)
 
     def from_dict(self, data):
-        for k, v in data.items():
-            if str(v) is "":
-                data[k] = None
-            elif k != "_id":  # All our data is int
-                data[k] = int(v)
         self.id = data["_id"]
         load_from_dict(data, self, "vm_id")
         load_from_dict(data, self, "vm_port")

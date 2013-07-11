@@ -1,6 +1,6 @@
 
 IPC_TYPE = 'zeromq'  # options are 'zeromq' or 'mongo'
-DB_TYPE = 'mongo'   # options are 'memory' or 'mongo'
+DB_TYPE = 'memory'   # options are 'memory' or 'mongo'
 
 MONGO_ADDRESS = "192.168.10.1:27017"
 MONGO_DB_NAME = "db"
