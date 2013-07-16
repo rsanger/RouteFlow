@@ -1,6 +1,12 @@
 import logging
 import struct
-import zmq
+import sys
+
+if 'eventlet' in sys.modules:
+    from eventlet.green import zmq
+    from rflib.ipc import eventlet_green_zmq_missing
+else:
+    import zmq
 
 from rflib.defs import *
 import rflib.ipc.IPC as IPC
