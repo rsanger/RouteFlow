@@ -148,12 +148,14 @@ void FlowTable::GWResolverCb(FlowTable *ft) {
                 /* If we can't resolve the gateway, put it to the end of the
                  * queue. Routes with unresolvable gateways will constantly
                  * loop through this code, popping and re-pushing. */
-                syslog(LOG_WARNING, "An error occurred while %s %s/%s.\n",
-                       "attempting to resolve", re.address.toString().c_str(),
+                syslog(LOG_WARNING, "An error occurred while attempting to "
+                       "resolve %s/%s.\n", re.address.toString().c_str(),
                        re.netmask.toString().c_str());
+            } else {
+                /* A resolution is scheduled, so try again later. */
                 ft->pendingRoutes.push(pr);
-                continue;
             }
+            continue;
         }
 
         if (ft->sendToHw(pr.type, pr.rentry) < 0) {
@@ -441,9 +443,11 @@ int FlowTable::initiateND(const char *hostAddr) {
         store.ss_family = AF_INET;
     } else if (inet_pton(AF_INET6, hostAddr, &sin6->sin6_addr) == 1) {
         store.ss_family = AF_INET6;
+        syslog(LOG_ERR, "Refusing to initiateND() for IPv6: %s\n", hostAddr);
+        return -1;
     } else {
-        syslog(LOG_ERR, "Invalid address family for IP \"%s\". Dropping\n",
-               hostAddr);
+        syslog(LOG_ERR, "Invalid address family for IP \"%s\". Refusing to "
+               "initiateND().\n", hostAddr);
         return -1;
     }
 
