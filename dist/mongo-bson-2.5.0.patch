@@ -1,0 +1,130 @@
+diff --git a/api-mongo/bson/bsonobj.h b/api-mongo/bson/bsonobj.h
+--- a/api-mongo/bson/bsonobj.h
++++ b/api-mongo/bson/bsonobj.h
+@@ -28,7 +28,9 @@
+ #include "mongo/base/string_data.h"
+ #include "mongo/bson/util/atomic_int.h"
+ #include "mongo/bson/util/builder.h"
++#if 0 // Not Apache licensed code
+ #include "mongo/util/bufreader.h"
++#endif
+ 
+ namespace mongo {
+ 
+@@ -499,6 +501,7 @@ namespace mongo {
+         return *this;
+     }
+ 
++#if 0 // Not needed, and relies on non-Apache licensed code for BufReader
+     /// members for Sorter
+     struct SorterDeserializeSettings {}; // unused
+     void serializeForSorter(BufBuilder& buf) const { buf.appendBuf(objdata(), objsize()); }
+@@ -511,6 +514,7 @@ namespace mongo {
+         // TODO consider ownedness?
+         return sizeof(BSONObj) + objsize();
+     }
++#endif
+ 
+     private:
+         const char *_objdata;
+diff --git a/api-mongo/bson/oid.cpp b/api-mongo/bson/oid.cpp
+--- a/api-mongo/bson/oid.cpp
++++ b/api-mongo/bson/oid.cpp
+@@ -15,6 +15,7 @@
+  *    limitations under the License.
+  */
+ 
++#if 0 // Not needed by BSON
+ #include "mongo/pch.h"
+ 
+ #include <boost/functional/hash.hpp>
+@@ -29,9 +30,14 @@
+ 
+ BOOST_STATIC_ASSERT( sizeof(mongo::OID) == mongo::OID::kOIDSize );
+ BOOST_STATIC_ASSERT( sizeof(mongo::OID) == 12 );
++#else
++#include "mongo/bson/bson.h"
++#include "mongo/bson/bsonobjbuilder.h"
++#endif
+ 
+ namespace mongo {
+ 
++#if 0 // Not needed by BSON
+     void OID::hash_combine(size_t &seed) const {
+         boost::hash_combine(seed, x);
+         boost::hash_combine(seed, y);
+@@ -180,6 +186,7 @@ namespace mongo {
+         T[3] = data[0];
+         return time;
+     }
++#endif
+ 
+     const string BSONObjBuilder::numStrs[] = {
+         "0",  "1",  "2",  "3",  "4",  "5",  "6",  "7",  "8",  "9",
+diff --git a/api-mongo/db/jsobj.cpp b/api-mongo/db/jsobj.cpp
+--- a/api-mongo/db/jsobj.cpp
++++ b/api-mongo/db/jsobj.cpp
+@@ -16,10 +16,11 @@
+  *    See the License for the specific language governing permissions and
+  *    limitations under the License.
+  */
+-
++#if 0 // Not needed for BSON
+ #include "mongo/pch.h"
+ 
+ #include "mongo/db/jsobj.h"
++#endif
+ 
+ #include <limits>
+ #include <cmath>
+@@ -27,6 +28,7 @@
+ #include <boost/lexical_cast.hpp>
+ #include <boost/static_assert.hpp>
+ 
++#if 0 // Not needed for BSON
+ #include "mongo/bson/bson_validate.h"
+ #include "mongo/bson/oid.h"
+ #include "mongo/bson/util/atomic_int.h"
+@@ -40,6 +42,10 @@
+ #include "mongo/util/mongoutils/str.h"
+ #include "mongo/util/startup_test.h"
+ #include "mongo/util/stringutils.h"
++#else
++#include "mongo/bson/bson.h"
++#include "mongo/bson/bsonelement.h"
++#endif
+ 
+ // make sure our assumptions are valid
+ BOOST_STATIC_ASSERT( sizeof(short) == 2 );
+@@ -50,7 +56,7 @@ BOOST_STATIC_ASSERT( sizeof(mongo::Date_t) == 8 );
+ BOOST_STATIC_ASSERT( sizeof(mongo::OID) == 12 );
+ 
+ namespace mongo {
+-
++#if 0 // Not needed for BSON
+     BSONElement eooElement;
+ 
+     GENOIDLabeler GENOID;
+@@ -327,6 +333,7 @@ namespace mongo {
+         }
+         return def;
+     }
++#endif
+ 
+     /** transform a BSON array into a vector of BSONElements.
+         we match array # positions with their vector position, and ignore
+@@ -356,6 +363,7 @@ namespace mongo {
+     }
+ 
+ 
++#if 0 // Not needed for BSON
+ 
+     /* Matcher --------------------------------------*/
+ 
+@@ -1375,5 +1383,6 @@ namespace mongo {
+             default: return "Invalid";
+         }
+     }
++#endif
+ 
+ } // namespace mongo

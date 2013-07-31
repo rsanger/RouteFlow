@@ -210,7 +210,7 @@ def genCPP(messages, fname):
     
     g.addLine("#include \"{0}.h\"".format(fname))
     g.blankLine()
-    g.addLine("#include <mongo/client/dbclient.h>")
+    g.addLine("#include <mongo/bson/bson.h>")
     g.blankLine()
     for name, msg in messages:
         g.addLine("{0}::{0}() {{".format(name))

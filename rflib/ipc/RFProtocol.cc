@@ -1,6 +1,6 @@
 #include "RFProtocol.h"
 
-#include <mongo/client/dbclient.h>
+#include <mongo/bson/bson.h>
 
 PortRegister::PortRegister() {
     set_vm_id(0);

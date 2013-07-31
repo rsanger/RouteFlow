@@ -8,17 +8,29 @@ LIBPREFIX=lib
 
 SOURCE_SUFIX := cc
 
+ifndef SOURCE_FILES
 SOURCE_FILES := $(wildcard *.$(SOURCE_SUFIX))
+endif
 
 RFLIBS := $(addprefix $(BUILD_LIB_DIR)/,$(RFLIB_NAME))
 RFLIBS := $(addsuffix .$(LIBSUFFIX),$(RFLIBS))
 
 BOOST_LIBS := -lboost_thread -lboost_system -lboost_filesystem -lboost_program_options
-LNX_LIBS := -lrt -lnetlink -lutil -lpthread -lmongoclient $(BOOST_LIBS)
+LNX_LIBS := -lrt -lnetlink -lutil -lpthread
+ifdef USE_ZEROMQ
+LNX_LIBS += -lzmq
+endif
+ifdef USE_MONGO
+LNX_LIBS += -lmongoclient
+endif
+LNX_LIBS += $(BOOST_LIBS)
 
 CPPFLAGS += -I$(LIB_DIR)
+CPPFLAGS += -I$(BUILD_INC_DIR)
 CPPFLAGS += $(addprefix -I$(LIB_DIR)/,$(libdirs))
+ifdef USE_MONGO
 CPPFLAGS += -I$(MONGO_DIR)
+endif
 
 ifneq (,$(DEBUG))
 CFLAGS += -g -D_GLIBCXX_DEBUG=1

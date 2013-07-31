@@ -7,6 +7,7 @@ QUIET=1
 
 OVS_VERSION="deb"
 MONGO_VERSION="deb"
+USE_MONGO=1
 
 RFDIR=`pwd`
 CONTROLLERS=""
@@ -39,6 +40,7 @@ usage() {
     echo "  -s    Build release versions of dependencies"
     echo "  -g    Build git versions of dependencies"
     echo "  -u    Update (rebuild) dependencies even if they have been built"
+    echo "  -z    Do not use MongoDB"
     echo;
     echo "Dependency version options:"
     echo "  Versions can be specified as \"deb\", \"X.Y.Z\" or \"git\""
@@ -93,7 +95,7 @@ get_versions() {
 }
 
 parse_opts() {
-    while getopts hcfqip:vdsgum:o: option; do
+    while getopts hcfqip:vdsgum:o:z option; do
         case "${option}" in
             c) DO="";
                SUPER="sudo";;
@@ -109,6 +111,7 @@ parse_opts() {
             u) UPDATE=1;;
             m) MONGO_VERSION=${OPTARG};;
             o) OVS_VERSION=${OPTARG};;
+            z) USE_MONGO=0;;
             *) usage;
                exit 1;;
         esac
@@ -170,6 +173,7 @@ main() {
     . $RFDIR/dist/common.sh
     . $RFDIR/dist/build_ovs.sh
     . $RFDIR/dist/build_mongo.sh
+    . $RFDIR/dist/build_bson.sh
 
     if [ "$DO" = "echo" ]; then
         print_status "Warning user" $YELLOW
@@ -182,10 +186,15 @@ main() {
 
     print_status "Fetching dependencies"
     pkg_install "$DEPENDENCIES"
-    $SUPER pip install "pymongo"
     get_ovs "$OVS_VERSION"
-    get_mongo "$MONGO_VERSION"
 
+    if [ $USE_MONGO -eq 1 ]; then
+        $SUPER pip install "pymongo"
+        get_mongo "$MONGO_VERSION"
+    else
+        get_bson
+    fi
+    
     build_routeflow $@
 }
 

@@ -7,7 +7,7 @@
 #include <string>
 #include <vector>
 #include <boost/shared_array.hpp>
-#include <mongo/client/dbclient.h>
+#include <mongo/bson/bson.h>
 
 #include "types/MACAddress.h"
 #include "types/IPAddress.h"
