@@ -1,14 +1,11 @@
 import struct
 import logging
-import threading
-import time
 
 from pox.core import core
 from pox.openflow.libopenflow_01 import *
-import pymongo as mongo
 
 import rflib.ipc.IPC as IPC
-import rflib.ipc.MongoIPC as MongoIPC
+import rflib.ipc.IPCService as IPCService
 from rflib.ipc.RFProtocol import *
 from rflib.ipc.RFProtocolFactory import RFProtocolFactory
 from rflib.defs import *
@@ -64,8 +61,7 @@ netmask_prefix = lambda a: sum([bin(int(x)).count("1") for x in a.split(".", 4)]
 
 # TODO: add proper support for ID
 ID = 0
-ipc = MongoIPC.MongoIPCMessageService(MONGO_ADDRESS, MONGO_DB_NAME, str(ID),
-                                      threading.Thread, time.sleep)
+ipc = IPCService.for_proxy(str(ID))
 table = Table()
 
 # Logging

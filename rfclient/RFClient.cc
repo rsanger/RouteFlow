@@ -8,8 +8,6 @@
 #include <boost/thread.hpp>
 
 #include "defs.h"
-#include "ipc/MongoIPC.h"
-#include "ipc/RFProtocol.h"
 #include "RFClient.hh"
 
 using namespace std;
@@ -84,7 +82,7 @@ RFClient::RFClient(uint64_t id, const string &address, RouteSource source) {
 
     string id_str = to_string<uint64_t>(id);
     syslog(LOG_INFO, "Starting RFClient (vm_id=%s)", id_str.c_str());
-    ipc = new MongoIPCMessageService(address, MONGO_DB_NAME, id_str);
+    ipc = IPCMessageServiceFactory::forClient(address, id_str);
 
     vector<Interface> ifaces = this->load_interfaces();
     vector<Interface>::iterator it;
@@ -273,11 +271,11 @@ void usage(char *name) {
 }
 
 int main(int argc, char* argv[]) {
-    char c;
-    uint64_t id = get_interface_id(DEFAULT_RFCLIENT_INTERFACE);
-    string address = MONGO_ADDRESS;
+    string address = "";  /* Empty means use default. */
     RouteSource route_source = RS_NETLINK;
+    uint64_t id = get_interface_id(DEFAULT_RFCLIENT_INTERFACE);
 
+    char c;
     while ((c = getopt (argc, argv, "a:fi:n:h")) != -1) {
         switch(c) {
         case 'a':

@@ -1,10 +1,11 @@
 #include "MongoIPC.h"
 #include <boost/thread.hpp>
+#include "defs.h"
 
 MongoIPCMessageService::MongoIPCMessageService(const string &address, const string db, const string id) {
     this->set_id(id);
     this->db = db;
-    this->address = address;
+    this->address = address.size() > 0 ? address : MONGO_ADDRESS;
     this->connect(producerConnection, this->address);
 }
 
@@ -88,3 +89,15 @@ IPCMessage* takeFromEnvelope(mongo::BSONObj envelope, IPCMessageFactory *factory
    msg->from_BSON(envelope[CONTENT_FIELD].Obj().objdata());
    return msg;
 }
+
+
+IPCMessageService* IPCMessageServiceFactory::forServer(const string& server, const string& id) {
+    return new MongoIPCMessageService(server, MONGO_DB_NAME, id);
+}
+IPCMessageService* IPCMessageServiceFactory::forClient(const string& server, const string& id) {
+    return new MongoIPCMessageService(server, MONGO_DB_NAME, id);
+}
+IPCMessageService* IPCMessageServiceFactory::forProxy(const string& server, const string& id) {
+    return new MongoIPCMessageService(server, MONGO_DB_NAME, id);
+}
+

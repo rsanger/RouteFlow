@@ -4,7 +4,7 @@ export LIB_DIR=$(ROOT_DIR)/rflib
 export NOX_DIR=$(ROOT_DIR)/nox-rfproxy
 
 # IPC options are zeromq or mongo
-export IPC=mongo
+export IPC=zeromq
 
 ifeq ($(IPC),zeromq)
 export USE_ZEROMQ=1

@@ -90,4 +90,14 @@ class IPCMessageService {
         string id;
 };
 
+/** Factory for concrete instances of the IPC messaging service.
+*/
+class IPCMessageServiceFactory {
+    public:
+        /* These return a new service suitable for indicated situation. */
+
+        static IPCMessageService* forServer(const string& server, const string& id);
+        static IPCMessageService* forClient(const string& server, const string& id);
+        static IPCMessageService* forProxy(const string& server, const string& id);
+};
 #endif /* __IPC_H__ */

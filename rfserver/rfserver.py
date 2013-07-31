@@ -5,14 +5,12 @@ import os
 import sys
 import logging
 import binascii
-import threading
-import time
 import argparse
 
 from bson.binary import Binary
 
 import rflib.ipc.IPC as IPC
-import rflib.ipc.MongoIPC as MongoIPC
+import rflib.ipc.IPCService as IPCService
 from rflib.ipc.RFProtocol import *
 from rflib.ipc.RFProtocolFactory import RFProtocolFactory
 from rflib.defs import *
@@ -21,6 +19,8 @@ from rflib.types.Action import *
 from rflib.types.Option import *
 
 from rftable import *
+
+logging.basicConfig(level=logging.INFO)
 
 # Register actions
 REGISTER_IDLE = 0
@@ -39,17 +39,8 @@ class RFServer(RFProtocolFactory, IPC.IPCMessageProcessor):
 
         # Logging
         self.log = logging.getLogger("rfserver")
-        self.log.setLevel(logging.INFO)
-        ch = logging.StreamHandler()
-        ch.setLevel(logging.INFO)
-        ch.setFormatter(logging.Formatter(logging.BASIC_FORMAT))
-        self.log.addHandler(ch)
 
-        self.ipc = MongoIPC.MongoIPCMessageService(MONGO_ADDRESS,
-                                                   MONGO_DB_NAME,
-                                                   RFSERVER_ID,
-                                                   threading.Thread,
-                                                   time.sleep)
+        self.ipc = IPCService.for_server(RFSERVER_ID)
         self.ipc.listen(RFCLIENT_RFSERVER_CHANNEL, self, self, False)
         self.ipc.listen(RFSERVER_RFPROXY_CHANNEL, self, self, True)
 
@@ -80,6 +71,8 @@ class RFServer(RFProtocolFactory, IPC.IPCMessageProcessor):
         if config_entry is None:
             # Register idle VM awaiting for configuration
             action = REGISTER_IDLE
+            self.log.warning('No config entry for client port (vm_id=%s, vm_port=%i)'
+                % (format_id(vm_id), vm_port))
         else:
             entry = self.rftable.get_entry_by_dp_port(config_entry.ct_id,
                                                       config_entry.dp_id,

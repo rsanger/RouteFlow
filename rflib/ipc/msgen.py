@@ -359,11 +359,10 @@ def genPy(messages, fname):
     g = CodeGenerator()
 
     g.addLine("import bson")    
-    g.addLine("import pymongo as mongo")
     g.blankLine()
     for tlv in ["Match","Action","Option"]:
         g.addLine("from rflib.types.{0} import {0}".format(tlv))
-    g.addLine("from MongoIPC import MongoIPCMessage")
+    g.addLine("from IPC import IPCMessage")
     g.blankLine()
     g.addLine("format_id = lambda dp_id: hex(dp_id).rstrip('L')")
     g.blankLine()
@@ -374,7 +373,7 @@ def genPy(messages, fname):
         v += 1
     g.blankLine()
     for name, msg in messages:
-        g.addLine("class {0}(MongoIPCMessage):".format(name))
+        g.addLine("class {0}(IPCMessage):".format(name))
         g.increaseIndent()
         g.addLine("def __init__(self, {0}):".format(", ".join([f + "=None" for t, f in msg])))
         g.increaseIndent()
@@ -435,19 +434,6 @@ def genPy(messages, fname):
         g.decreaseIndent()
         g.blankLine();
         
-        g.addLine("def from_bson(self, data):")
-        g.increaseIndent()
-        g.addLine("data = bson.BSON.decode(data)")
-        g.addLine("self.from_dict(data)")
-        g.decreaseIndent()
-        g.blankLine()
-        
-        g.addLine("def to_bson(self):")
-        g.increaseIndent()
-        g.addLine("return bson.BSON.encode(self.get_dict())")
-        g.decreaseIndent()
-        g.blankLine()
-                
         g.addLine("def __str__(self):")
         g.increaseIndent();
         g.addLine("s = \"{0}\\n\"".format(name))

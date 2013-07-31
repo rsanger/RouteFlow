@@ -1,6 +1,6 @@
 import pymongo as mongo
-import bson
 
+from rflib.defs import MONGO_ADDRESS, MONGO_DB_NAME
 import rflib.ipc.IPC as IPC
 
 FROM_FIELD = "from"
@@ -42,7 +42,7 @@ def format_address(address):
         raise ValueError, "Invalid address: " + str(address)
             
 class MongoIPCMessageService(IPC.IPCMessageService):
-    def __init__(self, address, db, id_, thread_constructor, sleep_function):
+    def __init__(self, address, db, id_, threading_):
         """Construct an IPCMessageService
 
         Args:
@@ -50,22 +50,17 @@ class MongoIPCMessageService(IPC.IPCMessageService):
             db: is the database name to connect to on MongoDB.
             id_: is an identifier to allow messages to be directed to the
                 appropriate recipient.
-            thread_constructor: function that takes 'target' and 'args'
-                parameters for the function to run and arguments to pass, and
-                return an object that has start() and join() functions.
-            sleep_function: function that takes a float and delays processing
-                for the specified period.
+            threading_: thread management interface, see IPCService.py
         """
         self._db = db
         self.address = format_address(address)
         self._id = id_
         self._producer_connection = mongo.Connection(*self.address)
-        self._threading = thread_constructor
-        self._sleep = sleep_function
+        self._threading = threading_
         
     def listen(self, channel_id, factory, processor, block=True):
-        worker = self._threading(target=self._listen_worker,
-                                 args=(channel_id, factory, processor))
+        worker = self._threading.Thread(target=self._listen_worker,
+                                        args=(channel_id, factory, processor))
         worker.start()
         if block:
             worker.join()
@@ -88,7 +83,7 @@ class MongoIPCMessageService(IPC.IPCMessageService):
                 msg = take_from_envelope(envelope, factory)
                 processor.process(envelope[FROM_FIELD], envelope[TO_FIELD], channel_id, msg);
                 collection.update({"_id": envelope["_id"]}, {"$set": {READ_FIELD: True}})
-            self._sleep(0.05)
+            self._threading.sleep(0.05)
             cursor = collection.find({TO_FIELD: self.get_id(), READ_FIELD: False}, sort=[("_id", mongo.ASCENDING)])
                 
     def _create_channel(self, connection, name):
@@ -102,31 +97,5 @@ class MongoIPCMessageService(IPC.IPCMessageService):
         except:
             pass
 
-class MongoIPCMessage(dict, IPC.IPCMessage):
-    def __init__(self, type_, **kwargs):
-        dict.__init__(self)
-        self.from_dict(kwargs)
-        self._type = type_
-        
-    def get_type(self):
-        return self._type
-
-    def from_dict(self, data):
-        for (k, v) in data.items():
-            self[k] = v
-        
-    def from_bson(self, data):
-        data = bson.BSON.decode(data)
-        self.from_dict(data)
-
-    def to_bson(self):
-        return bson.BSON.encode(self)
-        
-    def str(self):
-        string = ""
-        for (k, v) in self.items():
-            string += str(k) + ": " + str(v) + "\n"
-        return string
-        
-    def __str__(self):
-        return IPC.IPCMessage.__str__(self)
+def buildIPC(role, id_, threading_):
+    return MongoIPCMessageService(MONGO_ADDRESS, MONGO_DB_NAME, id_, threading_)
