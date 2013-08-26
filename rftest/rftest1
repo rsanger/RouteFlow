@@ -8,34 +8,55 @@ fi
 PROTOCOLS="OpenFlow10,OpenFlow12,OpenFlow13"
 SCRIPT_NAME="rftest1"
 LXCDIR=/var/lib/lxc
+USE_MONGO=1
 MONGODB_CONF=/etc/mongodb.conf
 MONGODB_PORT=27017
-MONGODB_ADDR="192.168.10.1"
+VM_ADDR="192.168.10.1"
 CONTROLLER_PORT=6633
 RF_HOME=..
 export PATH=$PATH:/usr/local/bin:/usr/local/sbin
 export PYTHONPATH=$PYTHONPATH:$RF_HOME
 
-ACTION=""
-case "$1" in
---help)
-    echo "$0"
-    echo "Options: "
+usage() {
+    echo "$0 [-hrz] [--pox] [--ryu]"
+    echo "Script Actions:"
     echo "    --pox: run using POX (default)"
-    echo "    --ryu: run using NOX"
-    echo "    --reset: stop running and clear data from previous executions"
-    exit
-    ;;
---reset)
-    ACTION="RESET"
-    ;;
---ryu)
-    ACTION="RYU"
-    ;;
-*)
-    ACTION="POX"
-    ;;
-esac
+    echo "    --ryu: run using RYU"
+    echo "    -r, --reset: stop running and clear data from previous executions"
+    echo
+    echo "General Options:"
+    echo "    -h, --help: Display this message and exit"
+    echo "    -z, --zeromq: Use ZeroMQ for IPC instead of MongoDB"
+}
+
+ACTION="POX"
+while test $# -gt 0
+do
+    case "$1" in
+    --pox)
+        ACTION="RYU"
+        ;;
+    --ryu)
+        ACTION="RYU"
+        ;;
+    -r | --reset)
+        ACTION="RESET"
+        ;;
+    -z | --zeromq)
+        USE_MONGO=0
+        ;;
+    -h | --help)
+        usage
+        exit 0
+        ;;
+    *)
+        usage
+        exit 1
+        ;;
+    esac
+
+    shift
+done
 
 cd $RF_HOME
 
@@ -90,13 +111,15 @@ reset() {
     done
 
     echo_bold "-> Deleting data from previous runs...";
-    mongo db --quiet --eval "
-        db.getCollection('rftable').drop();
-        db.getCollection('rfconfig').drop();
-        db.getCollection('rfstats').drop();
-        db.getCollection('rfclient<->rfserver').drop();
-        db.getCollection('rfserver<->rfproxy').drop();
-    "
+    if [ $USE_MONGO -eq 1 ]; then
+        mongo db --quiet --eval "
+            db.getCollection('rftable').drop();
+            db.getCollection('rfconfig').drop();
+            db.getCollection('rfstats').drop();
+            db.getCollection('rfclient<->rfserver').drop();
+            db.getCollection('rfserver<->rfproxy').drop();
+        "
+    fi
     rm -rf /var/lib/lxc/rfvm1/rootfs/opt/rfclient;
 }
 reset 1
@@ -104,13 +127,15 @@ trap "reset 0; exit 0" INT
 
 if [ "$ACTION" != "RESET" ]; then
     echo_bold "-> Setting up the management bridge (lxcbr0)..."
-    ifconfig lxcbr0 $MONGODB_ADDR up
+    ifconfig lxcbr0 $VM_ADDR up
     ovs-vsctl --may-exist add-port lxcbr0 rfvm1.0
 
-    echo_bold "-> Setting up MongoDB..."
-    sed -i "/bind_ip/c\bind_ip = 127.0.0.1,$MONGODB_ADDR" $MONGODB_CONF
-    service mongodb restart
-    wait_port_listen $MONGODB_PORT
+    if [ $USE_MONGO -eq 1 ]; then
+        echo_bold "-> Setting up MongoDB..."
+        sed -i "/bind_ip/c\bind_ip = 127.0.0.1,$VM_ADDR" $MONGODB_CONF
+        service mongodb restart
+        wait_port_listen $MONGODB_PORT
+    fi
 
     echo_bold "-> Starting the rfvm1 virtual machine..."
     # Create the rfclient dir
@@ -122,7 +147,7 @@ if [ "$ACTION" != "RESET" ]; then
     # We sleep for a few seconds to wait for the interfaces to go up
     echo "#!/bin/sh" > /var/lib/lxc/rfvm1/rootfs/root/run_rfclient.sh
     echo "sleep 3" >> /var/lib/lxc/rfvm1/rootfs/root/run_rfclient.sh
-    echo "/opt/rfclient/rfclient -a $MONGODB_ADDR 2>&1 >/var/log/rfclient.log" >> /var/lib/lxc/rfvm1/rootfs/root/run_rfclient.sh
+    echo "/opt/rfclient/rfclient 2>&1 >/var/log/rfclient.log" >> /var/lib/lxc/rfvm1/rootfs/root/run_rfclient.sh
 
     chmod +x /var/lib/lxc/rfvm1/rootfs/root/run_rfclient.sh
 
