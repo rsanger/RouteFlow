@@ -7,6 +7,7 @@ QUIET=1
 
 OVS_VERSION="deb"
 MONGO_VERSION="deb"
+ZMQ_VERSION="3.2.3"
 USE_MONGO=1
 
 RFDIR=`pwd`
@@ -40,7 +41,7 @@ usage() {
     echo "  -s    Build release versions of dependencies"
     echo "  -g    Build git versions of dependencies"
     echo "  -u    Update (rebuild) dependencies even if they have been built"
-    echo "  -z    Do not use MongoDB"
+    echo "  -z    Use ZeroMQ for IPC"
     echo;
     echo "Dependency version options:"
     echo "  Versions can be specified as \"deb\", \"X.Y.Z\" or \"git\""
@@ -105,8 +106,10 @@ parse_opts() {
             p) RFDIR=${OPTARG};;
             v) QUIET=0;;
             d) MONGO_VERSION="deb";
+               # ZMQ_VERSION="deb";  # Requires Ubuntu 13.10+
                OVS_VERSION="deb";;
             g) MONGO_VERSION="git";
+               ZMQ_VERSION="git";
                OVS_VERSION="git";;
             u) UPDATE=1;;
             m) MONGO_VERSION=${OPTARG};;
@@ -193,8 +196,9 @@ main() {
         get_mongo "$MONGO_VERSION"
     else
         get_bson
+        get_zmq "$ZMQ_VERSION"
     fi
-    
+
     build_routeflow $@
 }
 
