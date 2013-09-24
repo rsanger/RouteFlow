@@ -1,3 +1,6 @@
+Note: this is terrible code that needs to be rebased and significantly tidied. 
+So, yeah. Dont use this code. Just here for people to play with.
+
 # Welcome
 This version of RouteFlow is a beta developers' release intended to evaluate RouteFlow for providing virtualized IP routing services on one or more OpenFlow switches.
 
