@@ -6,3 +6,10 @@
 *.pyo
 *.pyc
 /api-mongo/*
+*.tar.gz
+*.tgz
+*openvswitch*
+*zeromq*
+ryu-rfproxy/.gitignore
+ryu-rfproxy/LICENSE
+ryu-rfproxy/README.md
