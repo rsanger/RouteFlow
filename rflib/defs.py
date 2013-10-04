@@ -50,7 +50,7 @@ DC_ALL = 255			# Send all traffic to the controller
 
 RMT_ADD = 0			# Add flow to datapath
 RMT_DELETE = 1			# Remove flow from datapath
-#RMT_MODIFY = 2		# Modify existing flow (Unimplemented)
+RMT_MODIFY = 2		# Modify existing flow
 
 # Port Configuration Types
 PCT_MAP_REQUEST = 0     # (deprecated) Request for a mapping packet.
