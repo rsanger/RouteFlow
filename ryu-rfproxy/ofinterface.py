@@ -63,6 +63,8 @@ def add_command(flow_mod, mod):
 
 def add_matches(flow_mod, matches):
     for match in matches:
+        # MPLS is not support in openvswitch. This implementation uses
+        # VLAN tags in the place of MPLS labels. This is a dirty hack.
         if match['type'] == RFMT_IPV4:
             value = bin_to_int(match['value'])
             addr = value >> 32
@@ -91,6 +93,9 @@ def add_matches(flow_mod, matches):
             flow_mod.match.set_tcp_dst(bin_to_int(match['value']))
         elif match['type'] == RFMT_IN_PORT:
             flow_mod.match.set_in_port(bin_to_int(match['value']))
+        elif match['type'] == RFMT_MPLS:
+            flow_mod.match.set_dl_type(0x8100)
+            flow_mod.match.set_vlan_vid(bin_to_int(match['value']))
         elif Match.from_dict(match).optional():
             log.info("Dropping unsupported Match (type: %s)" % match['type'])
         else:
@@ -103,6 +108,8 @@ def add_actions(flow_mod, action_tlvs):
     ofproto = flow_mod.datapath.ofproto
     actions = []
     for action in action_tlvs:
+        # MPLS is not support in openvswitch. This implementation uses
+        # VLAN tags in the place of MPLS labels. This is a dirty hack.
         if action['type'] == RFAT_OUTPUT:
             port = bin_to_int(action['value'])
             a = parser.OFPActionOutput(port, ofproto.OFPCML_MAX)
@@ -115,6 +122,17 @@ def add_actions(flow_mod, action_tlvs):
             dstMac = action['value']
             dst = parser.OFPMatchField.make(ofproto.OXM_OF_ETH_DST, dstMac)
             actions.append(parser.OFPActionSetField(dst))
+        elif action['type'] == RFAT_PUSH_MPLS:
+            actions.append(parser.OFPActionPushVlan(0x8100))
+            val = bin_to_int(action['value'])
+            field = parser.OFPMatchField.make(ofproto.OXM_OF_VLAN_VID, val)
+            actions.append(parser.OFPActionSetField(field))
+        elif action['type'] == RFAT_POP_MPLS:
+            actions.append(parser.OFPActionPopVlan())
+        elif action['type'] == RFAT_SWAP_MPLS:
+            val = bin_to_int(action['value'])
+            field = parser.OFPMatchField.make(ofproto.OXM_OF_VLAN_VID, val)
+            actions.append(parser.OFPActionSetField(field))
         elif Action.from_dict(action).optional():
             log.info("Dropping unsupported Action (type: %s)" % action['type'])
         else:
