@@ -10,6 +10,8 @@ RFAT_PUSH_MPLS = 4      # Push MPLS label
 RFAT_POP_MPLS = 5       # Pop MPLS label
 RFAT_SWAP_MPLS = 6      # Swap MPLS label
 # MSB = 1; Indicates optional feature.
+RFAT_WRITE_METADATA = 252 # Apply Metadata to the packet
+RFAT_GOTO_TABLE = 253   # Send to another flow table
 RFAT_DROP = 254         # Drop packet (Unimplemented)
 RFAT_SFLOW = 255        # Generate SFlow messages (Unimplemented)
 
@@ -19,7 +21,9 @@ typeStrings = {
             RFAT_SET_ETH_DST : "RFAT_SET_ETH_DST",
             RFAT_PUSH_MPLS : "RFAT_PUSH_MPLS",
             RFAT_POP_MPLS : "RFAT_POP_MPLS",
-            RFAT_SWAP_MPLS : "RFAT_SWAP_MPLS"
+            RFAT_SWAP_MPLS : "RFAT_SWAP_MPLS",
+            RFAT_GOTO_TABLE : "RFAT_GOTO_TABLE",
+            RFAT_WRITE_METADATA : "RFAT_WRITE_METADATA"
         }
 
 class Action(TLV):
@@ -32,6 +36,14 @@ class Action(TLV):
     @classmethod
     def OUTPUT(cls, port):
         return cls(RFAT_OUTPUT, port)
+
+    @classmethod
+    def WRITE_METADATA(cls, metadata):
+        return cls(RFAT_WRITE_METADATA, metadata)
+
+    @classmethod
+    def GOTO_TABLE(cls, table_no):
+        return cls(RFAT_GOTO_TABLE, table_no)
 
     @classmethod
     def SET_ETH_SRC(cls, ethernet_src):
@@ -78,6 +90,10 @@ class Action(TLV):
             return int_to_bin(value, 32)
         elif actionType in (RFAT_SET_ETH_SRC, RFAT_SET_ETH_DST):
             return ether_to_bin(value)
+        elif actionType == RFAT_WRITE_METADATA:
+            return int_to_bin(value, 64)
+        elif actionType == RFAT_GOTO_TABLE:
+            return int_to_bin(value, 8)
         elif actionType in (RFAT_POP_MPLS, RFAT_DROP, RFAT_SFLOW):
             return ''
         else:
@@ -91,7 +107,8 @@ class Action(TLV):
             return str(actionType)
 
     def get_value(self):
-        if self._type in (RFAT_OUTPUT, RFAT_PUSH_MPLS, RFAT_SWAP_MPLS):
+        if self._type in (RFAT_OUTPUT, RFAT_PUSH_MPLS, RFAT_SWAP_MPLS,
+                          RFAT_GOTO_TABLE):
             return bin_to_int(self._value)
         elif self._type in (RFAT_SET_ETH_SRC, RFAT_SET_ETH_DST):
             return bin_to_ether(self._value)

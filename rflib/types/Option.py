@@ -5,13 +5,15 @@ RFOT_PRIORITY = 1     # Route priority
 RFOT_IDLE_TIMEOUT = 2 # Drop route after specified idle time
 RFOT_HARD_TIMEOUT = 3 # Drop route after specified time has passed
 # MSB = 1; Indicates optional feature.
+RFOT_TABLE_NO = 254   # Specify Flow Table
 RFOT_CT_ID = 255      # Specify destination controller
 
 typeStrings = {
             RFOT_PRIORITY : "RFOT_PRIORITY",
             RFOT_IDLE_TIMEOUT : "RFOT_IDLE_TIMEOUT",
             RFOT_HARD_TIMEOUT : "RFOT_HARD_TIMEOUT",
-            RFOT_CT_ID : "RFOT_CT_ID"
+            RFOT_CT_ID : "RFOT_CT_ID",
+            RFOT_TABLE_NO : "RFOT_TABLE_NO"
         }
 
 class Option(TLV):
@@ -24,6 +26,10 @@ class Option(TLV):
     @classmethod
     def PRIORITY(cls, priority):
         return cls(RFOT_PRIORITY, priority)
+
+    @classmethod
+    def TABLE_NO(cls, table_no):
+        return cls(RFOT_TABLE_NO, table_no)
 
     @classmethod
     def IDLE_TIMEOUT(cls, timeout):
@@ -48,6 +54,8 @@ class Option(TLV):
     def type_to_bin(optionType, value):
         if optionType in (RFOT_PRIORITY, RFOT_IDLE_TIMEOUT, RFOT_HARD_TIMEOUT):
             return int_to_bin(value, 16)
+        elif optionType == RFOT_TABLE_NO:
+            return int_to_bin(value, 8)
         elif optionType == RFOT_CT_ID:
             return int_to_bin(value, 64)
         else:
@@ -62,7 +70,7 @@ class Option(TLV):
 
     def get_value(self):
         if self._type in (RFOT_PRIORITY, RFOT_IDLE_TIMEOUT, RFOT_HARD_TIMEOUT,
-                          RFOT_CT_ID):
+                          RFOT_CT_ID, RFOT_TABLE_NO):
             return bin_to_int(self._value)
         else:
             return None

@@ -10,6 +10,7 @@ RFMT_NW_PROTO = 6    # Match Network Protocol
 RFMT_TP_SRC = 7      # Match Transport Layer Src Port
 RFMT_TP_DST = 8      # Match Transport Layer Dest Port
 # MSB = 1; Indicates optional feature.
+RFMT_METADATA = 253  # Match Packet Metadata
 RFMT_IN_PORT = 254   # Match incoming port (Unimplemented)
 RFMT_VLAN = 255      # Match incoming VLAN (Unimplemented)
 
@@ -21,7 +22,8 @@ typeStrings = {
             RFMT_ETHERTYPE : "RFMT_ETHERTYPE",
             RFMT_NW_PROTO : "RFMT_NW_PROTO",
             RFMT_TP_SRC : "RFMT_TP_SRC",
-            RFMT_TP_DST : "RFMT_TP_DST"
+            RFMT_TP_DST : "RFMT_TP_DST",
+            RFMT_METADATA : "RFMT_METADATA"
         }
 
 class Match(TLV):
@@ -72,6 +74,10 @@ class Match(TLV):
         return cls(RFMT_TP_DST, port)
 
     @classmethod
+    def METADATA(cls, metadata):
+        return cls(RFMT_METADATA, metadata)
+
+    @classmethod
     def from_dict(cls, dic):
         ma = cls()
         ma._type = dic['type']
@@ -86,6 +92,8 @@ class Match(TLV):
             return inet_pton(AF_INET6, value[0]) + inet_pton(AF_INET6, value[1])
         elif matchType == RFMT_ETHERNET:
             return ether_to_bin(value)
+        elif matchType == RFMT_METADATA:
+            return int_to_bin(value, 64)
         elif matchType in (RFMT_MPLS, RFMT_IN_PORT):
             return int_to_bin(value, 32)
         elif matchType in (RFMT_VLAN, RFMT_ETHERTYPE, RFMT_TP_SRC, RFMT_TP_DST):

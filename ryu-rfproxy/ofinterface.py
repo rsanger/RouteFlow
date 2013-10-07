@@ -98,6 +98,8 @@ def add_matches(flow_mod, matches):
         elif match['type'] == RFMT_MPLS:
             flow_mod.match.set_dl_type(0x8100)
             flow_mod.match.set_vlan_vid(bin_to_int(match['value']))
+        elif match['type'] == RFMT_METADATA:
+            flow_mod.match.set_metadata(bin_to_int(match['value']))
         elif Match.from_dict(match).optional():
             log.info("Dropping unsupported Match (type: %s)" % match['type'])
         else:
@@ -109,6 +111,7 @@ def add_actions(flow_mod, action_tlvs):
     parser = flow_mod.datapath.ofproto_parser
     ofproto = flow_mod.datapath.ofproto
     actions = []
+    inst = []
     for action in action_tlvs:
         # MPLS is not support in openvswitch. This implementation uses
         # VLAN tags in the place of MPLS labels. This is a dirty hack.
@@ -135,13 +138,23 @@ def add_actions(flow_mod, action_tlvs):
             val = bin_to_int(action['value'])
             field = parser.OFPMatchField.make(ofproto.OXM_OF_VLAN_VID, val)
             actions.append(parser.OFPActionSetField(field))
+        elif action['type'] == RFAT_WRITE_METADATA:
+            val = bin_to_int(action['value'])
+            # For now assume no masked values
+            mask = (1 << 64) - 1
+            inst.append(parser.OFPInstructionWriteMetadata(val,mask))
+        elif action['type'] == RFAT_GOTO_TABLE:
+            val = bin_to_int(action['value'])
+            inst.append(parser.OFPInstructionGotoTable(val))
         elif Action.from_dict(action).optional():
             log.info("Dropping unsupported Action (type: %s)" % action['type'])
         else:
             log.warning("Failed to serialise Action (type: %s)" % action['type'])
             return
-    inst = parser.OFPInstructionActions(ofproto.OFPIT_APPLY_ACTIONS, actions)
-    flow_mod.instructions = [inst]
+    if actions:
+        inst.append(parser.OFPInstructionActions(ofproto.OFPIT_APPLY_ACTIONS,
+                                                 actions))
+    flow_mod.instructions = inst
 
 
 def add_options(flow_mod, options):
@@ -154,6 +167,8 @@ def add_options(flow_mod, options):
             flow_mod.hard_timeout = bin_to_int(option['value'])
         elif option['type'] == RFOT_CT_ID:
             pass
+        elif option['type'] == RFOT_TABLE_NO:
+            flow_mod.table_id = bin_to_int(option['value'])
         elif Option.from_dict(option).optional():
             log.info("Dropping unsupported Option (type: %s)" % option['type'])
         else:
