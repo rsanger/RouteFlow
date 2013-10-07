@@ -14,6 +14,7 @@ import rflib.ipc.IPCService as IPCService
 from rflib.ipc.RFProtocol import *
 from rflib.ipc.RFProtocolFactory import RFProtocolFactory
 from rflib.defs import *
+from rflib.types.TLV import *
 from rflib.types.Match import *
 from rflib.types.Action import *
 from rflib.types.Option import *
@@ -26,6 +27,11 @@ logging.basicConfig(level=logging.INFO)
 REGISTER_IDLE = 0
 REGISTER_ASSOCIATED = 1
 REGISTER_ISL = 2
+
+#table numbers
+PORT_TABLE = 0
+ROUTE_TABLE = 3
+OUTPUT_TABLE = 5
 
 
 class RFServer(RFProtocolFactory, IPC.IPCMessageProcessor):
@@ -106,76 +112,61 @@ class RFServer(RFProtocolFactory, IPC.IPCMessageProcessor):
     # and sends to the corresponding controller
     def register_route_mod(self, rm):
         vm_id = rm.get_id()
+        vm_port = None
 
         # Find the output action
         for i, action in enumerate(rm.actions):
             if action['type'] is RFAT_OUTPUT:
                 # Put the action in an action object for easy modification
-                action_output = Action.from_dict(action)
-                vm_port = action_output.get_value()
-
-                # Find the (vmid, vm_port), (dpid, dpport) pair
-                entry = self.rftable.get_entry_by_vm_port(vm_id, vm_port)
-
-                # If we can't find an associated datapath for this RouteMod,
-                # drop it.
-                if entry is None or entry.get_status() == RFENTRY_IDLE_VM_PORT:
-                    self.log.info("Received RouteMod destined for unknown "
-                                  "datapath - Dropping (vm_id=%s)" %
-                                  (format_id(vm_id)))
-                    return
-
-                # Replace the VM id,port with the Datapath id.port
-                rm.set_id(int(entry.dp_id))
-
-                if rm.get_mod() is RMT_DELETE:
-                    # When deleting a route, we don't need an output action.
-                    rm.actions.remove(action)
-                else:
-                    # Replace the VM port with the datapath port
-                    action_output.set_value(entry.dp_port)
-                    rm.actions[i] = action_output.to_dict()
-
-                entries = self.rftable.get_entries(dp_id=entry.dp_id,
-                                                   ct_id=entry.ct_id)
-                entries.extend(self.isltable.get_entries(dp_id=entry.dp_id,
-                                                         ct_id=entry.ct_id))
-                rm.add_option(Option.CT_ID(entry.ct_id))
-
-                self._send_rm_with_matches(rm, entry.dp_port, entries)
-
-                remote_dps = self.isltable.get_entries(rem_ct=entry.ct_id,
-                                                       rem_id=entry.dp_id)
-                for r in remote_dps:
-                    if r.get_status() == RFISL_ACTIVE:
-                        rm.set_options(rm.get_options()[:-1])
-                        rm.add_option(Option.CT_ID(r.ct_id))
-                        rm.set_id(int(r.dp_id))
-                        rm.set_actions(None)
-                        rm.add_action(Action.SET_ETH_SRC(r.eth_addr))
-                        rm.add_action(Action.SET_ETH_DST(r.rem_eth_addr))
-                        rm.add_action(Action.OUTPUT(r.dp_port))
-                        entries = self.rftable.get_entries(dp_id=r.dp_id,
-                                                           ct_id=r.ct_id)
-                        self._send_rm_with_matches(rm, r.dp_port, entries)
-
-                return
+                vm_port = bin_to_int(action['value'])
+                del rm.actions[i]
+                break
 
         # If no output action is found, don't forward the routemod.
-        self.log.info("Received RouteMod with no Output Port - Dropping "
-                      "(vm_id=%s)" % (format_id(vm_id)))
+        if vm_port is None:
+            self.log.info("Received RouteMod with no Output Port - Dropping "
+                          "(vm_id=%s)" % (format_id(vm_id)))
 
-    def _send_rm_with_matches(self, rm, out_port, entries):
-        #send entries matching external ports
-        for entry in entries:
-            if out_port != entry.dp_port:
-                if entry.get_status() == RFENTRY_ACTIVE or \
-                   entry.get_status() == RFISL_ACTIVE:
-                    rm.add_match(Match.ETHERNET(entry.eth_addr))
-                    rm.add_match(Match.IN_PORT(entry.dp_port))
-                    self.ipc.send(RFSERVER_RFPROXY_CHANNEL,
-                                  str(entry.ct_id), rm)
-                    rm.set_matches(rm.get_matches()[:-2])
+        # Find the (vmid, vm_port), (dpid, dpport) pair
+        entry = self.rftable.get_entry_by_vm_port(vm_id, vm_port)
+
+        # If we can't find an associated datapath for this RouteMod,
+        # drop it.
+        if entry is None or entry.get_status() == RFENTRY_IDLE_VM_PORT:
+            self.log.info("Received RouteMod destined for unknown "
+                          "datapath - Dropping (vm_id=%s)" %
+                          (format_id(vm_id)))
+            print(str(vm_port))
+            return
+
+        # Replace the VM id,port with the Datapath id.port
+        rm.set_id(int(entry.dp_id))
+
+        # Add new output actions
+        if rm.get_mod() is RMT_ADD:
+            rm.add_action(Action.WRITE_METADATA(entry.dp_port))
+            rm.add_action(Action.GOTO_TABLE(OUTPUT_TABLE))
+
+        rm.add_option(Option.TABLE_NO(ROUTE_TABLE))
+        rm.add_option(Option.CT_ID(entry.ct_id))
+
+        self.ipc.send(RFSERVER_RFPROXY_CHANNEL, str(entry.ct_id), rm)
+
+        # Send copies to the non egress datapaths in the fabric
+        remote_dps = self.isltable.get_entries(rem_ct=entry.ct_id,
+                                               rem_id=entry.dp_id)
+        for r in remote_dps:
+            if r.get_status() == RFISL_ACTIVE:
+                rm.set_options(rm.get_options()[:-1])
+                rm.add_option(Option.CT_ID(r.ct_id))
+                rm.set_id(int(r.dp_id))
+                rm.set_actions(None)
+                rm.add_action(Action.SET_ETH_DST(r.rem_eth_addr))
+                rm.add_action(Action.WRITE_METADATA(r.dp_port))
+                rm.add_action(Action.GOTO_TABLE(OUTPUT_TABLE))
+                entries = self.rftable.get_entries(dp_id=r.dp_id,
+                                                   ct_id=r.ct_id)
+                self.ipc.send(RFSERVER_RFPROXY_CHANNEL, str(entry.ct_id), rm)
 
     # DatapathPortRegister methods
     def register_dp_port(self, ct_id, dp_id, dp_port):
@@ -213,6 +204,8 @@ class RFServer(RFProtocolFactory, IPC.IPCMessageProcessor):
         elif action == REGISTER_ASSOCIATED:
             entry.associate(dp_id, dp_port, ct_id)
             self.rftable.set_entry(entry)
+            self.send_port_config_messages(
+                ct_id, dp_id, dp_port, entry.eth_addr)
             self.log.info("Registering datapath port and associating to "
                           "client port (dp_id=%s, dp_port=%i, vm_id=%s, "
                           "vm_port=%s)" % (format_id(dp_id), dp_port,
@@ -265,6 +258,9 @@ class RFServer(RFProtocolFactory, IPC.IPCMessageProcessor):
                 else:
                     n_entry.associate(ct_id, dp_id, dp_port, eth_addr)
                     self.isltable.set_entry(n_entry)
+                self.send_port_config_messages(ct_id, dp_id, dp_port, eth_addr)
+                self.send_port_config_messages(
+                    entry.ct_id, entry.dp_id, entry.dp_port, entry.eth_addr)
                 self.log.info("Registering ISL port and associating to "
                               "remote ISL port (ct_id=%s, dp_id=%s, "
                               "dp_port=%s, rem_ct=%s, rem_id=%s, "
@@ -273,7 +269,29 @@ class RFServer(RFProtocolFactory, IPC.IPCMessageProcessor):
                                                 format_id(entry.dp_id),
                                                 entry.dp_port))
 
-    def send_datapath_config_message(self, ct_id, dp_id, operation_id):
+    def send_port_config_messages(self, ct_id, dp_id, port, eth_addr):
+        rm = RouteMod(RMT_ADD, dp_id)
+        rm.add_match(Match.ETHERNET(eth_addr))
+        if port != None:
+          rm.add_match(Match.IN_PORT(port))
+        rm.add_action(Action.GOTO_TABLE(ROUTE_TABLE))
+        rm.add_option(Option.CT_ID(ct_id))
+        rm.add_option(Option.PRIORITY(PRIORITY_HIGH))
+        self.ipc.send(RFSERVER_RFPROXY_CHANNEL, str(ct_id), rm)
+
+        if port != None:
+            rm = RouteMod(RMT_ADD, dp_id)
+            rm.add_match(Match.METADATA(port))
+            rm.add_action(Action.SET_ETH_SRC(eth_addr))
+            rm.add_action(Action.OUTPUT(port))
+            rm.add_option(Option.CT_ID(ct_id))
+            rm.add_option(Option.TABLE_NO(OUTPUT_TABLE))
+            rm.add_option(Option.PRIORITY(PRIORITY_HIGH))
+            self.ipc.send(RFSERVER_RFPROXY_CHANNEL, str(ct_id), rm)
+
+    def send_datapath_config_message(self, ct_id, dp_id, operation_id,
+                                     table=ROUTE_TABLE):
+        # TODO: clear and drop all on all tables
         rm = RouteMod(RMT_ADD, dp_id)
 
         if operation_id == DC_CLEAR_FLOW_TABLE:
@@ -320,6 +338,7 @@ class RFServer(RFProtocolFactory, IPC.IPCMessageProcessor):
                 rm.add_match(Match.ETHERTYPE(RF_ETH_PROTO))
             rm.add_action(Action.CONTROLLER())
 
+        rm.add_option(Option.TABLE_NO(table))
         rm.add_option(Option.CT_ID(ct_id))
         self.ipc.send(RFSERVER_RFPROXY_CHANNEL, str(ct_id), rm)
 
@@ -333,9 +352,20 @@ class RFServer(RFProtocolFactory, IPC.IPCMessageProcessor):
             # Configure a normal switch. Clear the tables and install default
             # flows.
             self.send_datapath_config_message(ct_id, dp_id,
+                                              DC_CLEAR_FLOW_TABLE,
+                                              table=PORT_TABLE)
+            self.send_datapath_config_message(ct_id, dp_id,
                                               DC_CLEAR_FLOW_TABLE)
+            self.send_datapath_config_message(ct_id, dp_id,
+                                              DC_CLEAR_FLOW_TABLE,
+                                              table=OUTPUT_TABLE)
             # TODO: enforce order: clear should always be executed first
+            self.send_port_config_messages(ct_id, dp_id, None, ETH_BC_ADDR)
+            self.send_datapath_config_message(ct_id, dp_id, DC_DROP_ALL,
+                                              table=PORT_TABLE)
             self.send_datapath_config_message(ct_id, dp_id, DC_DROP_ALL)
+            self.send_datapath_config_message(ct_id, dp_id, DC_DROP_ALL,
+                                              table=OUTPUT_TABLE)
             self.send_datapath_config_message(ct_id, dp_id, DC_OSPF)
             self.send_datapath_config_message(ct_id, dp_id, DC_BGP_PASSIVE)
             self.send_datapath_config_message(ct_id, dp_id, DC_BGP_ACTIVE)

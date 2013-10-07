@@ -66,6 +66,8 @@ format_id = lambda dp_id: hex(dp_id).rstrip("L")
 netmask_prefix = lambda a: sum([bin(int(x)).count("1") for x in a.split(".", 4)])
 cidr_to_mask = lambda a: ((1 << a) - 1) << (32 - a)
 
+ETH_BC_ADDR = "ff:ff:ff:ff:ff:ff"
+
 ETHERTYPE_IP = 0x0800
 ETHERTYPE_ARP = 0x0806
 ETHERTYPE_IPV6 = 0x86DD
