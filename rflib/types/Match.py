@@ -118,7 +118,8 @@ class Match(TLV):
         elif self._type == RFMT_ETHERNET:
             return bin_to_ether(self._value)
         elif self._type in (RFMT_MPLS, RFMT_IN_PORT, RFMT_VLAN, RFMT_ETHERTYPE,
-                            RFMT_NW_PROTO, RFMT_TP_SRC, RFMT_TP_DST):
+                            RFMT_NW_PROTO, RFMT_TP_SRC, RFMT_TP_DST,
+                            RFMT_METADATA):
             return bin_to_int(self._value)
         else:
             return None

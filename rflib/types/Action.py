@@ -108,7 +108,7 @@ class Action(TLV):
 
     def get_value(self):
         if self._type in (RFAT_OUTPUT, RFAT_PUSH_MPLS, RFAT_SWAP_MPLS,
-                          RFAT_GOTO_TABLE):
+                          RFAT_GOTO_TABLE, RFAT_WRITE_METADATA):
             return bin_to_int(self._value)
         elif self._type in (RFAT_SET_ETH_SRC, RFAT_SET_ETH_DST):
             return bin_to_ether(self._value)
