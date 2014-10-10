@@ -44,21 +44,21 @@ class RouteModTranslator(object):
         self.isltable = isltable
 
     def configure_datapath(self):
-        raise Exception
+        raise NotImplementedError
 
     def handle_controller_route_mod(self, entry, rm):
-        raise Exception
+        raise NotImplementedError
 
     def handle_route_mod(self, entry, rm):
-        raise Exception
+        raise NotImplementedError
 
     def handle_isl_route_mod(self, entry, rm):
-        raise Exception
+        raise NotImplementedError
 
 
 class DefaultRouteModTranslator(RouteModTranslator):
 
-    def _send_rm_with_matches(self, rm, out_port, entries):
+    def _create_ethernet_match_routemods(self, rm, out_port, entries):
         rms = []
         for entry in entries:
             if out_port != entry.dp_port:
@@ -76,7 +76,7 @@ class DefaultRouteModTranslator(RouteModTranslator):
         # delete all groups
         rm = RouteMod(RMT_DELETE_GROUP, self.dp_id)
         rms.append(rm)
-        
+
         # delete all flows
         rm = RouteMod(RMT_DELETE, self.dp_id)
         rms.append(rm)
@@ -109,7 +109,8 @@ class DefaultRouteModTranslator(RouteModTranslator):
         # Replace the VM port with the datapath port
         rm.add_action(Action.OUTPUT(entry.dp_port))
 
-        rms.extend(self._send_rm_with_matches(rm, entry.dp_port, entries))
+        rms.extend(
+            self._create_ethernet_match_routemods(rm, entry.dp_port, entries))
         return rms
 
     def handle_isl_route_mod(self, r, rm):
@@ -121,7 +122,8 @@ class DefaultRouteModTranslator(RouteModTranslator):
         rm.add_action(Action.SET_ETH_DST(r.rem_eth_addr))
         rm.add_action(Action.OUTPUT(r.dp_port))
         entries = self.rftable.get_entries(dp_id=r.dp_id, ct_id=r.ct_id)
-        rms.extend(self._send_rm_with_matches(rm, r.dp_port, entries))
+        rms.extend(
+            self._create_ethernet_match_routemods(rm, r.dp_port, entries))
         return rms
 
 
@@ -147,8 +149,10 @@ class SatelliteRouteModTranslator(DefaultRouteModTranslator):
                 rm.add_action(Action.SET_ETH_SRC(r.eth_addr))
                 rm.add_action(Action.SET_ETH_DST(r.rem_eth_addr))
                 rm.add_action(Action.OUTPUT(r.dp_port))
-                entries = self.rftable.get_entries(dp_id=r.dp_id, ct_id=r.ct_id)
-                rms.extend(self._send_rm_with_matches(rm, r.dp_port, entries))
+                entries = self.rftable.get_entries(
+                    dp_id=r.dp_id, ct_id=r.ct_id)
+                rms.extend(self._create_ethernet_match_routemods(
+                    rm, r.dp_port, entries))
         return rms
 
 
@@ -164,7 +168,7 @@ class NoviFlowMultitableRouteModTranslator(RouteModTranslator):
         super(NoviFlowMultitableRouteModTranslator, self).__init__(
             dp_id, ct_id, rftable, isltable)
 
-    def _send_rm_with_matches(self, rm, out_port, entries):
+    def _create_ethernet_match_routemods(self, rm, out_port, entries):
         rms = []
         for entry in entries:
             if out_port != entry.dp_port:
@@ -260,7 +264,8 @@ class NoviFlowMultitableRouteModTranslator(RouteModTranslator):
         rm.set_options(None)
         rm.add_option(Option.PRIORITY(PRIORITY_HIGH))
 
-        rms.extend(self._send_rm_with_matches(rm, entry.dp_port, entries))
+        rms.extend(
+            self._create_ethernet_match_routemods(rm, entry.dp_port, entries))
         return rms
 
     def handle_isl_route_mod(self, r, rm):
@@ -275,7 +280,8 @@ class NoviFlowMultitableRouteModTranslator(RouteModTranslator):
         rm.add_action(Action.SET_ETH_DST(r.rem_eth_addr))
         rm.add_action(Action.OUTPUT(r.dp_port))
         entries = self.rftable.get_entries(dp_id=r.dp_id, ct_id=r.ct_id)
-        rms.extend(self._send_rm_with_matches(rm, r.dp_port, entries))
+        rms.extend(
+            self._create_ethernet_match_routemods(rm, r.dp_port, entries))
         return rms
 
 
@@ -284,11 +290,13 @@ class RFServer(RFProtocolFactory, IPC.IPCMessageProcessor):
         self.config = RFConfig(configfile)
         self.islconf = RFISLConf(islconffile)
         try:
-            self.multitabledps = set([int(x, 16) for x in multitabledps.split(",")])
+            self.multitabledps = set(
+                [int(x, 16) for x in multitabledps.split(",")])
         except ValueError:
             self.multitabledps = set()
         try:
-            self.satellitedps = set([int(x, 16) for x in satellitedps.split(",")])
+            self.satellitedps = set(
+                [int(x, 16) for x in satellitedps.split(",")])
         except ValueError:
             self.satellitedps = set()
 
@@ -314,6 +322,11 @@ class RFServer(RFProtocolFactory, IPC.IPCMessageProcessor):
         self.ipc.listen(RFSERVER_RFPROXY_CHANNEL, self, self, True)
 
     def process(self, from_, to, channel, msg):
+        """Process RFP messages received by RFServer.
+
+        Args:
+            from_, to, channel: Unused
+            msg (IPCMessage): the RFP message for processing."""
         type_ = msg.get_type()
         if type_ == PORT_REGISTER:
             self.register_vm_port(msg.get_vm_id(), msg.get_vm_port(),
@@ -330,14 +343,30 @@ class RFServer(RFProtocolFactory, IPC.IPCMessageProcessor):
             self.map_port(msg.get_vm_id(), msg.get_vm_port(),
                           msg.get_vs_id(), msg.get_vs_port())
 
+
     # Port register methods
     def register_vm_port(self, vm_id, vm_port, eth_addr):
+        """Process PORT_REGISTER type RFP messages.
+
+        PORT_REGISTER messages indicate that a port on the vm has come up, it
+        also contains the MAC address used by the port.
+
+        Find the config entry for this port and check for an existing rftable
+        entry for the associated dp port. If the entry exists then set the
+        entry as associated, if not create a new entry and set it as idle.
+
+        Args:
+            vm_id (int): The id of the virtual machine
+            vm_port (int): the number of the port
+            eth_addr (string): the ethernet address associated for the port.
+        """
         action = None
         config_entry = self.config.get_config_for_vm_port(vm_id, vm_port)
         if config_entry is None:
             # Register idle VM awaiting for configuration
             action = REGISTER_IDLE
-            self.log.warning('No config entry for client port (vm_id=%s, vm_port=%i)'
+            self.log.warning(
+                'No config entry for client port (vm_id=%s, vm_port=%i)'
                 % (format_id(vm_id), vm_port))
         else:
             entry = self.rftable.get_entry_by_dp_port(config_entry.ct_id,
@@ -367,18 +396,32 @@ class RFServer(RFProtocolFactory, IPC.IPCMessageProcessor):
                              format_id(entry.dp_id), entry.dp_port))
 
     def acknowledge_route_mod(self, ct_id, vm_id, vm_port):
-        self.ipc.send(RFCLIENT_RFSERVER_CHANNEL, str(vm_id),
-                      PortConfig(vm_id=vm_id, vm_port=vm_port, operation_id=PCT_ROUTEMOD_ACK))
+        self.ipc.send(
+            RFCLIENT_RFSERVER_CHANNEL, str(vm_id),
+            PortConfig(
+                vm_id=vm_id, vm_port=vm_port, operation_id=PCT_ROUTEMOD_ACK))
 
     def send_route_mod(self, ct_id, rm):
         rm.add_option(Option.CT_ID(ct_id))
         self.ipc.send(RFSERVER_RFPROXY_CHANNEL, str(ct_id), rm)
 
-    # Handle RouteMod messages (type ROUTE_MOD)
-    #
-    # Takes a RouteMod, replaces its VM id,port with the associated DP id,port
-    # and sends to the corresponding controller
     def register_route_mod(self, rm):
+        """Process ROUTE_MOD type RFP messages.
+
+        Create and translate copies of the routemod for any associated
+        datapaths and send them to rfproxy.
+
+        The id of the routemod must be replaced to represent the datapath as
+        opposed to the switch.
+
+        The modifications to the routemod copies for each datapath are
+        dependant on its vendo and configuration, so these are handled by the
+        translator. Any routemods received back from the translator are then
+        sent to the appropriate controller.
+
+        Args:
+            rm (IPCMessage): the routemod for processing.
+        """
         vm_id = rm.get_id()
         vm_port = rm.get_vm_port()
 
@@ -398,7 +441,7 @@ class RFServer(RFProtocolFactory, IPC.IPCMessageProcessor):
         rm.set_id(int(entry.dp_id))
 
         rms = []
-        
+
         if rm.get_mod() is RMT_CONTROLLER:
             rms.extend(translator.handle_controller_route_mod(entry, rm))
 
@@ -412,7 +455,8 @@ class RFServer(RFProtocolFactory, IPC.IPCMessageProcessor):
                 if r.get_status() == RFISL_ACTIVE:
                     local_rm = copy.deepcopy(rm)
                     remote_translator = self.route_mod_translator[int(r.dp_id)]
-                    rms.extend(remote_translator.handle_isl_route_mod(r, local_rm))
+                    rms.extend(
+                        remote_translator.handle_isl_route_mod(r, local_rm))
         else:
             self.log.info("Received RouteMod with unknown type: %s " % rm)
 
@@ -422,6 +466,33 @@ class RFServer(RFProtocolFactory, IPC.IPCMessageProcessor):
 
     # DatapathPortRegister methods
     def register_dp_port(self, ct_id, dp_id, dp_port):
+        """process REGISTER_DP_PORT type RFP messages.
+
+        REGISTER_DP_PORT messages indicate a port on a datapath has been found
+        by rfproxy.
+
+        There are two types of ports, external ports and isl ports.
+
+        Firstly the config entry for the port is found, which determines the
+        port type.
+
+        Then rftable or rfisl table is checked for an entry indicating the
+        associated port has been registered.
+
+        For an isl port if the associated port is registered then the port is
+        considered active and can be used for passing traffic. This is
+        inadequate checking and should be modified.
+
+        For external ports the two ports also need to determine their mapping
+        to the port on the ovs instance on the vm server machine. So their
+        status is set to associated until a Virtual Plane Map RFP message
+        confirms the association and the port can be made active.
+
+        Args:
+            ct_id (int): the id of the controller
+            dp_id (int): the id of the switch
+            dp_port (int): the id of the port
+        """
         stop = self.config_dp(ct_id, dp_id)
         if stop:
             return
@@ -519,16 +590,28 @@ class RFServer(RFProtocolFactory, IPC.IPCMessageProcessor):
     def send_datapath_config_messages(self, ct_id, dp_id):
         rms = self.route_mod_translator[dp_id].configure_datapath()
         for rm in rms:
-            self.send_route_mod(ct_id, rm) 
+            self.send_route_mod(ct_id, rm)
 
     def config_dp(self, ct_id, dp_id):
+        """"Send the initial configuration to a datapath when it first comes
+        active.
+
+        The configuration is dependant on the datapath, so is handled by
+        translators. The initial configuration deletes any existing rules,
+        adds the default drop rule and the controller rule for ARP traffic.
+
+        Args:
+            ct_id(int): the id of the controller
+            dp_id (int): id of the datapath
+        """
         if is_rfvs(dp_id):
             return True
         else:
             if (self.rftable.is_dp_registered(ct_id, dp_id) or
                 self.isltable.is_dp_registered(ct_id, dp_id)):
                 if dp_id not in self.route_mod_translator:
-                    self.log.info("Configuring datapath (dp_id=%s)" % format_id(dp_id))
+                    self.log.info(
+                        "Configuring datapath (dp_id=%s)" % format_id(dp_id))
                     if dp_id in self.multitabledps:
                         self.route_mod_translator[dp_id] = NoviFlowMultitableRouteModTranslator(
                             dp_id, ct_id, self.rftable, self.isltable)
@@ -538,7 +621,7 @@ class RFServer(RFProtocolFactory, IPC.IPCMessageProcessor):
                     else:
                         self.route_mod_translator[dp_id] = DefaultRouteModTranslator(
                             dp_id, ct_id, self.rftable, self.isltable)
-                    self.send_datapath_config_messages(ct_id, dp_id) 
+                    self.send_datapath_config_messages(ct_id, dp_id)
             return False
     # DatapathDown methods
     def set_dp_down(self, ct_id, dp_id):
@@ -567,6 +650,8 @@ class RFServer(RFProtocolFactory, IPC.IPCMessageProcessor):
                            (format_id(dp_id), dp_port))
 
     def reset_vm_port(self, vm_id, vm_port):
+        """Send a PCT_RESET message to the vm to inform it when a port has
+        gone down."""
         if vm_id is None:
             return
         self.ipc.send(RFCLIENT_RFSERVER_CHANNEL, str(vm_id),
@@ -577,6 +662,22 @@ class RFServer(RFProtocolFactory, IPC.IPCMessageProcessor):
 
     # PortMap methods
     def map_port(self, vm_id, vm_port, vs_id, vs_port):
+        """Process VIRTUAL_PLANE_MAP messages.
+
+        The virtual plane map message indicates that a mapping packet has been
+        received by rfproxy from the specified vm port. That port's status is
+        set to active and a data plane map message is sent to rfproxy to
+        inform it which datapath port is associated with that vm port, and
+        a PortConfig message is sent to the vm to acknowledge the receipt of
+        the mapping packet.
+
+        Args:
+            vm_id (int): the vm id
+            vm_port (int): the vm port
+            vs_id (int): the dp id of the server ovs instance from which the
+                mapping packet was received
+            vs_port (int): the id of the port on the ovs instance
+        """
         entry = self.rftable.get_entry_by_vm_port(vm_id, vm_port)
         if entry is not None and entry.get_status() == RFENTRY_ASSOCIATED:
             # If the association is valid, activate it
@@ -611,8 +712,10 @@ if __name__ == "__main__":
                         help='ISL mapping configuration file')
     parser.add_argument('-m', '--multitabledps', default='',
                         help='List of datapaths that support multiple tables')
-    parser.add_argument('-s', '--satellitedps', default='',
-                        help='List of datapaths that default forward to ISL peer')
+    parser.add_argument(
+        '-s', '--satellitedps', default='',
+        help='List of datapaths that default forward to ISL peer')
 
     args = parser.parse_args()
-    server = RFServer(args.configfile, args.islconfig, args.multitabledps, args.satellitedps)
+    server = RFServer(
+        args.configfile, args.islconfig, args.multitabledps, args.satellitedps)
