@@ -5,7 +5,7 @@ DB_TYPE = 'memory'   # options are 'memory' or 'mongo'
 MONGO_ADDRESS = "192.168.10.1:27017"
 MONGO_DB_NAME = "db"
 
-ZEROMQ_ADDRESS =  "tcp://192.168.10.1:25555"
+ZEROMQ_ADDRESS = "tcp://172.30.20.253:25555"
 
 RFCLIENT_RFSERVER_CHANNEL = "rfclient<->rfserver"
 RFSERVER_RFPROXY_CHANNEL = "rfserver<->rfproxy"

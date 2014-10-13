@@ -23,9 +23,9 @@ RFBR=br0
 RFDP=dp0
 RFDPID=7266767372667673
 OFP=OpenFlow13
-RFVM1IP=192.168.10.100
-HOSTVMIP=192.168.10.1
-OVSSOCK=/tmp/openvswitch-db.sock
+RFVM1IP=172.30.20.100
+HOSTVMIP=172.30.20.253
+OVSSOCK=/var/run/openvswitch/db.sock
 VSCTL="ovs-vsctl --db=unix:$OVSSOCK"
 OFCTL="ovs-ofctl -O$OFP"
 export PATH=$PATH:/usr/local/bin:/usr/local/sbin
@@ -108,11 +108,7 @@ check_local_br_up() {
 }
 
 start_ovs() {
-    if [ ! -f /usr/local/etc/openvswitch/conf.db ] ; then
-        ovsdb-tool create /usr/local/etc/openvswitch/conf.db /usr/local/share/openvswitch/vswitch.ovsschema
-    fi
-        ovsdb-server --pidfile --detach --remote=punix:$OVSSOCK
-        ovs-vswitchd --pidfile --detach unix:$OVSSOCK
+    :
 }
 
 start_sample_vms() {
@@ -236,7 +232,7 @@ EOF
     mkdir -p $RFCLIENTDIR
 
     # Copy the rfclient executable
-    cp build/rfclient $RFCLIENTDIR/rfclient
+    cp rfclient/rfclient $RFCLIENTDIR/rfclient
     cp -p -P /usr/local/lib/libzmq* $ROOTFS/usr/local/lib
     chroot $ROOTFS ldconfig
 

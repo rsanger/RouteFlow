@@ -4,7 +4,7 @@
 #define MONGO_ADDRESS "192.168.10.1:27017"
 #define MONGO_DB_NAME "db"
 
-#define ZEROMQ_ADDRESS "tcp://192.168.10.1:25555"
+#define ZEROMQ_ADDRESS "tcp://172.30.20.253:25555"
 
 #define RFCLIENT_RFSERVER_CHANNEL "rfclient<->rfserver"
 #define RFSERVER_RFPROXY_CHANNEL "rfserver<->rfproxy"
