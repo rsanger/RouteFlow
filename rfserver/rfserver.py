@@ -34,6 +34,9 @@ REGISTER_IDLE = 0
 REGISTER_ASSOCIATED = 1
 REGISTER_ISL = 2
 
+# some magic numbers:
+NFSHUNT_ID = 55
+
 class RouteModTranslator(object):
 
     DROP_PRIORITY = Option.PRIORITY(PRIORITY_LOWEST + PRIORITY_BAND)
@@ -281,6 +284,170 @@ class NoviFlowMultitableRouteModTranslator(RouteModTranslator):
         rms.extend(self._send_rm_with_matches(rm, r.dp_port, entries))
         return rms
 
+class OVSNFShuntRouteModTranslator(RouteModTranslator):
+    # NoviFlow as of Aug 2014 doesn't handle flow add operations
+    # in unsorted priority order well (very slow). For the moment
+    # make all flows in a table same priority.
+
+    NFS_EGRESS_TABLE = 4
+    FIB_TABLE = 3
+    NFS_INGRESS_TABLE = 2
+    ETHER_TABLE = 1
+
+    INT_PORT = 1
+    EXT_PORT = 2
+    CFP_INT_PORT = 3
+    CFP_EXT_PORT = 4
+
+    def __init__(self, dp_id, ct_id, rftable, isltable):
+        super(OVSNFShuntRouteModTranslator, self).__init__(
+            dp_id, ct_id, rftable, isltable)
+
+    # Single table topology, so should be ok without this bit
+    #def _send_rm_with_matches(self, rm, out_port, entries):
+    #    rms = []
+    #    for entry in entries:
+    #        if out_port != entry.dp_port:
+    #            if (entry.get_status() == RFENTRY_ACTIVE or
+    #                entry.get_status() == RFISL_ACTIVE):
+    #                rms.append(rm)
+    #                break
+    #    return rms
+
+    def configure_datapath(self):
+        rms = []
+
+        ## delete all groups
+        #rm = RouteMod(RMT_DELETE_GROUP, self.dp_id)
+        #rms.append(rm)
+        ## default group - send to controller
+        #rm = RouteMod(RMT_ADD_GROUP, self.dp_id)
+        #rm.set_group(CONTROLLER_GROUP);
+        #rm.add_action(Action.CONTROLLER())
+        #rms.append(rm)
+
+        # delete all flows
+        rm = RouteMod(RMT_DELETE, self.dp_id)
+        rms.append(rm)
+
+        # default drop
+        #for table_id in (0, self.ETHER_TABLE, self.FIB_TABLE):
+        #    rm = RouteMod(RMT_ADD, self.dp_id)
+        #    rm.set_table(table_id)
+        #    rm.add_option(self.DROP_PRIORITY)
+        #    rms.append(rm)
+        #rm = RouteMod(RMT_ADD, self.dp_id)
+        #rm.add_match(Match.ETHERNET("ff:ff:ff:ff:ff:ff"))
+        #rm.add_action(Action.GOTO(self.ETHER_TABLE))
+        #rm.add_option(self.CONTROLLER_PRIORITY)
+        #rms.append(rm)
+        ## ARP
+        #rm = RouteMod(RMT_ADD, self.dp_id)
+        #rm.set_table(self.ETHER_TABLE)
+        #rm.add_match(Match.ETHERTYPE(ETHERTYPE_ARP))
+        #rm.add_action(Action.GROUP(CONTROLLER_GROUP))
+        #rm.add_option(self.CONTROLLER_PRIORITY)
+        #rms.append(rm)
+        ## IPv4
+        #rm = RouteMod(RMT_ADD, self.dp_id)
+        #rm.set_table(self.ETHER_TABLE)
+        #rm.add_match(Match.ETHERTYPE(ETHERTYPE_IP))
+        #rm.add_option(self.DEFAULT_PRIORITY)
+        #rm.add_action(Action.GOTO(self.FIB_TABLE))
+        #rms.append(rm)
+        # Shunt flows
+        rm = RouteMod(RMT_ADD, self.dp_id)
+        rm.add_match(Match.IN_PORT(self.INT_PORT))
+        rm.add_option(self.DROP_PRIORITY)
+        rm.add_action(Action.OUTPUT(self.CFP_INT_PORT))
+        rms.append(rm)
+        rm = RouteMod(RMT_ADD, self.dp_id)
+        rm.add_match(Match.IN_PORT(EXT_PORT))
+        rm.add_option(self.DROP_PRIORITY)
+        rm.add_action(Action.OUTPUT(self.CFP_EXT_PORT))
+        rms.append(rm)
+        rm = RouteMod(RMT_ADD, self.dp_id)
+        rm.add_match(Match.IN_PORT(self.CFP_INT_PORT))
+        rm.add_option(self.DROP_PRIORITY)
+        rm.add_action(Action.OUTPUT(self.INT_PORT))
+        rms.append(rm)
+        rm = RouteMod(RMT_ADD, self.dp_id)
+        rm.add_match(Match.IN_PORT(CFP_EXT_PORT))
+        rm.add_option(self.DROP_PRIORITY)
+        rm.add_action(Action.OUTPUT(self.EXT_PORT))
+        rms.append(rm)
+        return rms
+
+    def handle_nfs_route_mod(self, entry, rm):
+        #rm.set_table(self.NFS_INGRESS_TABLE)
+
+        # Replace the VM port with the datapath port
+        rm.add_action(Action.OUTPUT(entry.dp_port))
+
+        return [rm]
+
+
+    def handle_controller_route_mod(self, entry, rm):
+        rms = []
+        rm.add_action(Action.GROUP(CONTROLLER_GROUP))
+        # should be FIB_TABLE, but see NoviFlow note.
+        rm.set_table(self.ETHER_TABLE)
+        dl_dst = None
+        orig_matches = rm.get_matches()
+        rm.set_matches(None)
+        for match_dict in orig_matches:
+            match = Match.from_dict(match_dict)
+            match_type = match.type_to_str(match._type)
+            if match_type == "RFMT_ETHERNET":
+                dl_dst = match
+            else:
+                rm.add_match(match)
+        rms.append(rm)
+
+        if dl_dst is not None:
+            hw_rm = RouteMod(RMT_CONTROLLER, entry.dp_id)
+            hw_rm.set_id(rm.get_id())
+            hw_rm.set_vm_port(rm.get_vm_port())
+            hw_rm.add_match(dl_dst)
+            hw_rm.add_action(Action.GOTO(self.ETHER_TABLE))
+            hw_rm.add_option(self.DEFAULT_PRIORITY)
+            rms.append(hw_rm)
+
+        return rms
+
+    def handle_route_mod(self, entry, rm):
+        rms = []
+        entries = self.rftable.get_entries(dp_id=entry.dp_id,
+                                           ct_id=entry.ct_id)
+        entries.extend(self.isltable.get_entries(dp_id=entry.dp_id,
+                                                 ct_id=entry.ct_id))
+
+        # Replace the VM port with the datapath port
+        rm.add_action(Action.OUTPUT(entry.dp_port))
+
+        rm.set_table(self.FIB_TABLE)
+        # See NoviFlow note
+        rm.set_options(None)
+        rm.add_option(Option.PRIORITY(PRIORITY_HIGH))
+
+        rms.extend(self._send_rm_with_matches(rm, entry.dp_port, entries))
+        return rms
+
+    def handle_isl_route_mod(self, r, rm):
+        raise NotImplementedError
+        rms = []
+        # See NoviFlow note
+        rm.set_options(None)
+        rm.add_option(Option.PRIORITY(PRIORITY_HIGH))
+        rm.set_id(self.dp_id)
+        rm.set_table(self.FIB_TABLE)
+        rm.set_actions(None)
+        rm.add_action(Action.SET_ETH_SRC(r.eth_addr))
+        rm.add_action(Action.SET_ETH_DST(r.rem_eth_addr))
+        rm.add_action(Action.OUTPUT(r.dp_port))
+        entries = self.rftable.get_entries(dp_id=r.dp_id, ct_id=r.ct_id)
+        rms.extend(self._send_rm_with_matches(rm, r.dp_port, entries))
+        return rms
 
 class RFServer(RFProtocolFactory, IPC.IPCMessageProcessor):
     def __init__(self, configfile, islconffile, multitabledps, satellitedps):
@@ -401,9 +568,12 @@ class RFServer(RFProtocolFactory, IPC.IPCMessageProcessor):
         rm.set_id(int(entry.dp_id))
 
         rms = []
-        
+
         if rm.get_mod() is RMT_CONTROLLER:
             rms.extend(translator.handle_controller_route_mod(entry, rm))
+
+        elif vm_id = NFSHUNT_ID:
+            rms.extend(translator.handle_nfs_route_mod(entry, rm))
 
         elif rm.get_mod() in (RMT_ADD, RMT_DELETE):
             rms.extend(translator.handle_route_mod(entry, rm))
