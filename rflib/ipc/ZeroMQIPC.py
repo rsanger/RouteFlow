@@ -16,6 +16,12 @@ INTERNAL_SEND_CHANNEL = "inproc://sender"
 INTERNAL_PUBLISH_CHANNEL = "inproc://channeler"
 
 _logger = logging.getLogger(__name__)
+_handler    = logging.StreamHandler()
+_log_format = '%(asctime)s %(name)-12s %(levelname)-8s %(message)s'
+_formatter  = logging.Formatter(_log_format, '%b %d %H:%M:%S')
+_handler.setFormatter(_formatter)
+_logger.addHandler(_handler)
+_logger.propagate = 0
 _logger.setLevel(logging.INFO)
 
 class ZeroMQIPCMessageService(IPC.IPCMessageService):

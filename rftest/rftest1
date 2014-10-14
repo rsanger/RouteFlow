@@ -22,9 +22,8 @@ export PATH=$PATH:/usr/local/bin:/usr/local/sbin
 export PYTHONPATH=$PYTHONPATH:$RF_HOME
 
 usage() {
-    echo "$0 [-hrz] [--pox] [--ryu]"
+    echo "$0 [-hrz] [--ryu]"
     echo "Script Actions:"
-    echo "    --pox: run using POX (default)"
     echo "    --ryu: run using RYU"
     echo "    -r, --reset: stop running and clear data from previous executions"
     echo
@@ -33,13 +32,10 @@ usage() {
     echo "    -z, --zeromq: Use ZeroMQ for IPC instead of MongoDB"
 }
 
-ACTION="POX"
+ACTION="RYU"
 while test $# -gt 0
 do
     case "$1" in
-    --pox)
-        ACTION="RYU"
-        ;;
     --ryu)
         ACTION="RYU"
         ;;
@@ -157,20 +153,6 @@ if [ "$ACTION" != "RESET" ]; then
 
     echo_bold "-> Starting the controller and RFPRoxy..."
     case "$ACTION" in
-    POX)
-        cd pox
-        RFSTATS=""
-        if [ $USE_MONGO -eq 1 ]; then
-            RFSTATS="rfstats"
-            echo_bold "-> Enabling RFStats component..."
-        else
-            echo_bold "-> Disabling RFStats component..."
-        fi
-        ./pox.py log.level --=INFO topology openflow.topology \
-                 openflow.discovery rfproxy $RFSTATS &
-        cd -
-        PROTOCOLS="OpenFlow10"
-        ;;
     RYU)
         ryu-manager $RF_HOME/ryu-rfproxy/rfproxy.py &
         ;;

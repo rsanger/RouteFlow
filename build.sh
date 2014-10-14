@@ -50,7 +50,7 @@ usage() {
     echo "  -o    Specify the Open vSwitch version to fetch" \
          "(default: $OVS_VERSION)"
     echo;
-    echo "Valid controllers: pox (default), nox, ryu. Multiple may be" \
+    echo "Valid controllers: nox, ryu. Multiple may be" \
          "specified at once."
     echo "Controllers must be specified at the end of the command."
     echo;
@@ -158,7 +158,11 @@ build_routeflow() {
 
             grep -q cgroup /etc/fstab
             if [ $? -eq 1 ]; then
-                $SUPER echo "none /cgroup cgroup defaults 0 0" >> /etc/fstab
+                if [ -z "$DO" ]; then
+                    echo "none /cgroup cgroup defaults 0 0" | $SUPER tee -a /etc/fstab > /dev/null
+                else
+                    $SUPER echo "none /cgroup cgroup defaults 0 0 >> /etc/fstab"
+                fi
                 if [ $? -ne 0 ]; then
                     print_status "Can't add cgroup to /etc/fstab" $YELLOW
                 fi

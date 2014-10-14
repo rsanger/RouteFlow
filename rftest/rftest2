@@ -120,8 +120,8 @@ EOF
 done
 
 echo_bold "-> Starting the controller and RFPRoxy..."
-cd pox
-./pox.py log.level --=INFO topology openflow.topology openflow.discovery rfproxy rfstats &
+cd ryu-rfproxy
+ryu-manager rfproxy.py &
 cd -
 wait_port_listen $CONTROLLER_PORT
 

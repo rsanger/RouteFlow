@@ -23,13 +23,16 @@ from rflib.types.Option import *
 
 from rftable import *
 
-logging.basicConfig(level=logging.INFO)
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s %(name)-15s %(levelname)-8s %(message)s',
+    datefmt='%b %d %H:%M:%S'
+    )
 
 # Register actions
 REGISTER_IDLE = 0
 REGISTER_ASSOCIATED = 1
 REGISTER_ISL = 2
-
 
 class RouteModTranslator(object):
 
