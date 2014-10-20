@@ -36,6 +36,7 @@ REGISTER_ISL = 2
 
 # some magic numbers:
 NFSHUNT_ID = 55
+#the other magic numbers are further down now, under the translator
 
 class RouteModTranslator(object):
 
@@ -303,58 +304,14 @@ class OVSNFShuntRouteModTranslator(RouteModTranslator):
         super(OVSNFShuntRouteModTranslator, self).__init__(
             dp_id, ct_id, rftable, isltable)
 
-    # Single table topology, so should be ok without this bit
-    #def _send_rm_with_matches(self, rm, out_port, entries):
-    #    rms = []
-    #    for entry in entries:
-    #        if out_port != entry.dp_port:
-    #            if (entry.get_status() == RFENTRY_ACTIVE or
-    #                entry.get_status() == RFISL_ACTIVE):
-    #                rms.append(rm)
-    #                break
-    #    return rms
-
     def configure_datapath(self):
         rms = []
-
-        ## delete all groups
-        #rm = RouteMod(RMT_DELETE_GROUP, self.dp_id)
-        #rms.append(rm)
-        ## default group - send to controller
-        #rm = RouteMod(RMT_ADD_GROUP, self.dp_id)
-        #rm.set_group(CONTROLLER_GROUP);
-        #rm.add_action(Action.CONTROLLER())
-        #rms.append(rm)
 
         # delete all flows
         rm = RouteMod(RMT_DELETE, self.dp_id)
         rms.append(rm)
 
-        # default drop
-        #for table_id in (0, self.ETHER_TABLE, self.FIB_TABLE):
-        #    rm = RouteMod(RMT_ADD, self.dp_id)
-        #    rm.set_table(table_id)
-        #    rm.add_option(self.DROP_PRIORITY)
-        #    rms.append(rm)
-        #rm = RouteMod(RMT_ADD, self.dp_id)
-        #rm.add_match(Match.ETHERNET("ff:ff:ff:ff:ff:ff"))
-        #rm.add_action(Action.GOTO(self.ETHER_TABLE))
-        #rm.add_option(self.CONTROLLER_PRIORITY)
-        #rms.append(rm)
-        ## ARP
-        #rm = RouteMod(RMT_ADD, self.dp_id)
-        #rm.set_table(self.ETHER_TABLE)
-        #rm.add_match(Match.ETHERTYPE(ETHERTYPE_ARP))
-        #rm.add_action(Action.GROUP(CONTROLLER_GROUP))
-        #rm.add_option(self.CONTROLLER_PRIORITY)
-        #rms.append(rm)
-        ## IPv4
-        #rm = RouteMod(RMT_ADD, self.dp_id)
-        #rm.set_table(self.ETHER_TABLE)
-        #rm.add_match(Match.ETHERTYPE(ETHERTYPE_IP))
-        #rm.add_option(self.DEFAULT_PRIORITY)
-        #rm.add_action(Action.GOTO(self.FIB_TABLE))
-        #rms.append(rm)
+
         # Shunt flows
         rm = RouteMod(RMT_ADD, self.dp_id)
         rm.add_match(Match.IN_PORT(self.INT_PORT))
@@ -382,7 +339,7 @@ class OVSNFShuntRouteModTranslator(RouteModTranslator):
         #rm.set_table(self.NFS_INGRESS_TABLE)
 
         # Replace the VM port with the datapath port
-        rm.add_action(Action.OUTPUT(entry.dp_port))
+        rm.add_option(self.DEFAULT_PRIORITY)
 
         return [rm]
 
@@ -553,7 +510,10 @@ class RFServer(RFProtocolFactory, IPC.IPCMessageProcessor):
         vm_port = rm.get_vm_port()
 
         # Find the (vmid, vm_port), (dpid, dpport) pair
-        entry = self.rftable.get_entry_by_vm_port(vm_id, vm_port)
+        # hax2thamax
+        entry = RFEntry(
+            vm_id=vm_id, vm_port=vm_port,ct_id=0,dp_id=0x99,dp_port=vm_port)
+        #entry = self.rftable.get_entry_by_vm_port(vm_id, vm_port)
         translator = self.route_mod_translator[entry.dp_id]
 
         # If we can't find an associated datapath for this RouteMod,
@@ -570,9 +530,10 @@ class RFServer(RFProtocolFactory, IPC.IPCMessageProcessor):
         rms = []
 
         if rm.get_mod() is RMT_CONTROLLER:
+            print rm
             rms.extend(translator.handle_controller_route_mod(entry, rm))
 
-        elif vm_id = NFSHUNT_ID:
+        elif vm_id == NFSHUNT_ID:
             rms.extend(translator.handle_nfs_route_mod(entry, rm))
 
         elif rm.get_mod() in (RMT_ADD, RMT_DELETE):
@@ -695,24 +656,28 @@ class RFServer(RFProtocolFactory, IPC.IPCMessageProcessor):
             self.send_route_mod(ct_id, rm) 
 
     def config_dp(self, ct_id, dp_id):
+        print "confing dp {0}".format(dp_id)
         if is_rfvs(dp_id):
             return True
         else:
-            if (self.rftable.is_dp_registered(ct_id, dp_id) or
-                self.isltable.is_dp_registered(ct_id, dp_id)):
-                if dp_id not in self.route_mod_translator:
-                    self.log.info("Configuring datapath (dp_id=%s)" % format_id(dp_id))
-                    if dp_id in self.multitabledps:
-                        self.route_mod_translator[dp_id] = NoviFlowMultitableRouteModTranslator(
-                            dp_id, ct_id, self.rftable, self.isltable)
-                    elif dp_id in self.satellitedps:
-                        self.route_mod_translator[dp_id] = SatelliteRouteModTranslator(
-                            dp_id, ct_id, self.rftable, self.isltable)
-                    else:
-                        self.route_mod_translator[dp_id] = DefaultRouteModTranslator(
-                            dp_id, ct_id, self.rftable, self.isltable)
-                    self.send_datapath_config_messages(ct_id, dp_id) 
+            self.route_mod_translator[dp_id]  = OVSNFShuntRouteModTranslator(
+                dp_id, ct_id, self.rftable, self.isltable)
             return False
+            #if (self.rftable.is_dp_registered(ct_id, dp_id) or
+            #    self.isltable.is_dp_registered(ct_id, dp_id)):
+            #    if dp_id not in self.route_mod_translator:
+            #        self.log.info("Configuring datapath (dp_id=%s)" % format_id(dp_id))
+            #        if dp_id in self.multitabledps:
+            #            self.route_mod_translator[dp_id] = NoviFlowMultitableRouteModTranslator(
+            #                dp_id, ct_id, self.rftable, self.isltable)
+            #        elif dp_id in self.satellitedps:
+            #            self.route_mod_translator[dp_id] = SatelliteRouteModTranslator(
+            #                dp_id, ct_id, self.rftable, self.isltable)
+            #        else:
+            #            self.route_mod_translator[dp_id] = DefaultRouteModTranslator(
+            #                dp_id, ct_id, self.rftable, self.isltable)
+            #        self.send_datapath_config_messages(ct_id, dp_id) 
+            #return False
     # DatapathDown methods
     def set_dp_down(self, ct_id, dp_id):
         for entry in self.rftable.get_dp_entries(ct_id, dp_id):

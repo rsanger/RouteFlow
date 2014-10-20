@@ -11,6 +11,7 @@ RFMT_TP_SRC = 7      # Match Transport Layer Src Port
 RFMT_TP_DST = 8      # Match Transport Layer Dest Port
 RFMT_IN_PORT = 9     # Match incoming port
 RFMT_VLAN_ID = 10    # Match incoming VLAN ID
+RFMT_IPV4_SRC = 11   # Match IPv4 Destination
 
 typeStrings = {
             RFMT_IPV4 : "RFMT_IPV4",
@@ -35,6 +36,10 @@ class Match(TLV):
     @classmethod
     def IPV4(cls, address, netmask):
         return cls(RFMT_IPV4, (address, netmask))
+
+    @classmethod
+    def IPV4_SRC(cls, address, netmask):
+        return cls(RFMT_IPV4_SRC, (address, netmask))
 
     @classmethod
     def IPV6(cls, address, netmask):
@@ -81,7 +86,7 @@ class Match(TLV):
 
     @staticmethod
     def type_to_bin(matchType, value):
-        if matchType == RFMT_IPV4:
+        if matchType == RFMT_IPV4 or RFMT_IPV4_SRC:
             return inet_pton(AF_INET, value[0]) + inet_pton(AF_INET, value[1])
         elif matchType == RFMT_IPV6:
             return inet_pton(AF_INET6, value[0]) + inet_pton(AF_INET6, value[1])
@@ -104,7 +109,7 @@ class Match(TLV):
             return str(matchType)
 
     def get_value(self):
-        if self._type == RFMT_IPV4:
+        if self._type == RFMT_IPV4 or RMT_IPV4_SRC:
             return (inet_ntop(AF_INET, self._value[:4]), inet_ntop(AF_INET, self._value[4:]))
         elif self._type == RFMT_IPV6:
             return (inet_ntop(AF_INET6, self._value[:16]), inet_ntop(AF_INET6, self._value[16:]))
