@@ -85,8 +85,8 @@ class Action(TLV):
         return cls(RFAT_GOTO, table)
 
     @classmethod
-    def RFAT_STRIP_VLAN_DEFERRED(cls, table):
-        return cls(RFAT_STRIP_VLAN_DEFERRED, table)
+    def STRIP_VLAN_DEFERRED(cls):
+        return cls(RFAT_STRIP_VLAN_DEFERRED)
 
     @classmethod
     def from_dict(cls, dic):

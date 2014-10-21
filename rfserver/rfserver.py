@@ -290,15 +290,11 @@ class OVSNFShuntRouteModTranslator(RouteModTranslator):
     # in unsorted priority order well (very slow). For the moment
     # make all flows in a table same priority.
 
-    NFS_EGRESS_TABLE = 4
-    FIB_TABLE = 3
-    NFS_INGRESS_TABLE = 2
-    ETHER_TABLE = 1
+    # TODO: include routeflow tables
+    SHUNT_TABLE = 0 # contains all the shunting flows
+    CFP_TABLE = 1 # used to push vlan tags to send traffic to the right vm port
 
-    INT_PORT = 1
-    EXT_PORT = 2
-    CFP_INT_PORT = 3
-    CFP_EXT_PORT = 4
+    CFP_PORT = 1 # TODO: make this configurable
 
     def __init__(self, dp_id, ct_id, rftable, isltable):
         super(OVSNFShuntRouteModTranslator, self).__init__(
@@ -311,44 +307,45 @@ class OVSNFShuntRouteModTranslator(RouteModTranslator):
         rm = RouteMod(RMT_DELETE, self.dp_id)
         rms.append(rm)
 
-
-        # Shunt flows
-        rm = RouteMod(RMT_ADD, self.dp_id)
-        rm.add_match(Match.IN_PORT(self.INT_PORT))
-        rm.add_option(self.DROP_PRIORITY)
-        rm.add_action(Action.OUTPUT(self.CFP_INT_PORT))
-        rms.append(rm)
-        rm = RouteMod(RMT_ADD, self.dp_id)
-        rm.add_match(Match.IN_PORT(EXT_PORT))
-        rm.add_option(self.DROP_PRIORITY)
-        rm.add_action(Action.OUTPUT(self.CFP_EXT_PORT))
-        rms.append(rm)
-        rm = RouteMod(RMT_ADD, self.dp_id)
-        rm.add_match(Match.IN_PORT(self.CFP_INT_PORT))
-        rm.add_option(self.DROP_PRIORITY)
-        rm.add_action(Action.OUTPUT(self.INT_PORT))
-        rms.append(rm)
-        rm = RouteMod(RMT_ADD, self.dp_id)
-        rm.add_match(Match.IN_PORT(CFP_EXT_PORT))
-        rm.add_option(self.DROP_PRIORITY)
-        rm.add_action(Action.OUTPUT(self.EXT_PORT))
+        rm = RouteMod(RMT_DELETE, self.dp_id, self.CFP_TABLE)
         rms.append(rm)
         return rms
 
-    def handle_nfs_route_mod(self, entry, rm):
-        #rm.set_table(self.NFS_INGRESS_TABLE)
-
-        # Replace the VM port with the datapath port
+    def configure_datapath_port(self, dp_port, vs_port):
+        rms = []
+        # send traffic for the controller to dp0 with a vlan port representing
+        # the vs port
+        rm = RouteMod(RMT_ADD, self.dp_id, table=self.CFP_TABLE)
+        rm.add_match(Match.IN_PORT(dp_port))
+        rm.add_action(Action.SET_VLAN_ID(vs_port))
+        rm.add_action(Action.OUTPUT(self.CFP_PORT))
         rm.add_option(self.DEFAULT_PRIORITY)
-
-        return [rm]
+        rms.append(rm)
+        # output traffic from dp0 according to its vlan id
+        # TODO: to make this work for rfclient this will be confusing, rfclient
+        # routes will need to be output and nfshunt routes need to go to the
+        # fib.
+        # to achieve that basically we are going to have to let the controllers
+        # dictate this behaviour. It will probably need a new routemod type.
+        # the issue of the two controllers tripping over each other is kinda
+        # unfortunate too, however, giving rfclient absolute priority over
+        # anything else makes sense.
+        rm = RouteMod(RMT_ADD, self.dp_id, self.SHUNT_TABLE)
+        rm.add_match(Match.IN_PORT(self.CFP_PORT))
+        rm.add_match(Match.VLAN_ID(vs_port))
+        rm.add_action(Action.STRIP_VLAN_DEFERRED())
+        rm.add_action(Action.OUTPUT(dp_port))
+        rm.add_option(self.CONTROLLER_PRIORITY)
+        rms.append(rm)
+        return rms
 
 
     def handle_controller_route_mod(self, entry, rm):
         rms = []
-        rm.add_action(Action.GROUP(CONTROLLER_GROUP))
-        # should be FIB_TABLE, but see NoviFlow note.
-        rm.set_table(self.ETHER_TABLE)
+        rm.add_action(Action.GOTO(self.CFP_TABLE))
+        rm.set_table(self.SHUNT_TABLE)
+
+        # so this next part is for rfclient, but it shouldnt change our stuff
         dl_dst = None
         orig_matches = rm.get_matches()
         rm.set_matches(None)
@@ -361,50 +358,31 @@ class OVSNFShuntRouteModTranslator(RouteModTranslator):
                 rm.add_match(match)
         rms.append(rm)
 
-        if dl_dst is not None:
-            hw_rm = RouteMod(RMT_CONTROLLER, entry.dp_id)
-            hw_rm.set_id(rm.get_id())
-            hw_rm.set_vm_port(rm.get_vm_port())
-            hw_rm.add_match(dl_dst)
-            hw_rm.add_action(Action.GOTO(self.ETHER_TABLE))
-            hw_rm.add_option(self.DEFAULT_PRIORITY)
-            rms.append(hw_rm)
+        #if dl_dst is not None:
+        #    hw_rm = RouteMod(RMT_CONTROLLER, entry.dp_id)
+        #    hw_rm.set_id(rm.get_id())
+        #    hw_rm.set_vm_port(rm.get_vm_port())
+        #    hw_rm.add_match(dl_dst)
+        #    hw_rm.add_action(Action.GOTO(self.ETHER_TABLE))
+        #    hw_rm.add_option(self.DEFAULT_PRIORITY)
+        #    rms.append(hw_rm)
 
         return rms
 
     def handle_route_mod(self, entry, rm):
-        rms = []
-        entries = self.rftable.get_entries(dp_id=entry.dp_id,
-                                           ct_id=entry.ct_id)
-        entries.extend(self.isltable.get_entries(dp_id=entry.dp_id,
-                                                 ct_id=entry.ct_id))
+        # Only dealing with the single dp case for now
+        # TODO: to handle both rfclient and nfshunt we should check the vm_id
+        # which we will need to get elsewhere and set the table correctly
 
         # Replace the VM port with the datapath port
         rm.add_action(Action.OUTPUT(entry.dp_port))
 
-        rm.set_table(self.FIB_TABLE)
-        # See NoviFlow note
-        rm.set_options(None)
-        rm.add_option(Option.PRIORITY(PRIORITY_HIGH))
-
-        rms.extend(self._send_rm_with_matches(rm, entry.dp_port, entries))
-        return rms
+        rm.set_table(self.SHUNT_TABLE)
+        return [rm]
 
     def handle_isl_route_mod(self, r, rm):
         raise NotImplementedError
-        rms = []
-        # See NoviFlow note
-        rm.set_options(None)
-        rm.add_option(Option.PRIORITY(PRIORITY_HIGH))
-        rm.set_id(self.dp_id)
-        rm.set_table(self.FIB_TABLE)
-        rm.set_actions(None)
-        rm.add_action(Action.SET_ETH_SRC(r.eth_addr))
-        rm.add_action(Action.SET_ETH_DST(r.rem_eth_addr))
-        rm.add_action(Action.OUTPUT(r.dp_port))
-        entries = self.rftable.get_entries(dp_id=r.dp_id, ct_id=r.ct_id)
-        rms.extend(self._send_rm_with_matches(rm, r.dp_port, entries))
-        return rms
+
 
 class RFServer(RFProtocolFactory, IPC.IPCMessageProcessor):
     def __init__(self, configfile, islconffile, multitabledps, satellitedps):
@@ -510,10 +488,8 @@ class RFServer(RFProtocolFactory, IPC.IPCMessageProcessor):
         vm_port = rm.get_vm_port()
 
         # Find the (vmid, vm_port), (dpid, dpport) pair
-        # hax2thamax
-        entry = RFEntry(
-            vm_id=vm_id, vm_port=vm_port,ct_id=0,dp_id=0x99,dp_port=vm_port)
-        #entry = self.rftable.get_entry_by_vm_port(vm_id, vm_port)
+        print "vmid: {0}  vmport: {1}".format(vm_id, vm_port)
+        entry = self.rftable.get_entry_by_vm_port(vm_id, vm_port)
         translator = self.route_mod_translator[entry.dp_id]
 
         # If we can't find an associated datapath for this RouteMod,
@@ -530,7 +506,6 @@ class RFServer(RFProtocolFactory, IPC.IPCMessageProcessor):
         rms = []
 
         if rm.get_mod() is RMT_CONTROLLER:
-            print rm
             rms.extend(translator.handle_controller_route_mod(entry, rm))
 
         elif vm_id == NFSHUNT_ID:
@@ -658,6 +633,8 @@ class RFServer(RFProtocolFactory, IPC.IPCMessageProcessor):
     def config_dp(self, ct_id, dp_id):
         print "confing dp {0}".format(dp_id)
         if is_rfvs(dp_id):
+            # TODO: I think configuration of the initial controller rule here
+            # should be moved from projectw.sh to here
             return True
         else:
             self.route_mod_translator[dp_id]  = OVSNFShuntRouteModTranslator(
@@ -678,6 +655,7 @@ class RFServer(RFProtocolFactory, IPC.IPCMessageProcessor):
             #                dp_id, ct_id, self.rftable, self.isltable)
             #        self.send_datapath_config_messages(ct_id, dp_id) 
             #return False
+
     # DatapathDown methods
     def set_dp_down(self, ct_id, dp_id):
         for entry in self.rftable.get_dp_entries(ct_id, dp_id):
@@ -733,6 +711,34 @@ class RFServer(RFProtocolFactory, IPC.IPCMessageProcessor):
                           (format_id(entry.vm_id), entry.vm_port,
                            format_id(entry.dp_id), entry.dp_port,
                            format_id(entry.vs_id), entry.vs_port))
+            # also set up the flows for cfp
+            rms = self.route_mod_translator[entry.dp_id].configure_datapath_port(
+                entry.dp_port, vs_port)
+            rms.extend(self.configure_vs_port(vs_id, vs_port, entry.dp_port))
+            for msg in rms:
+                self.ipc.send(RFSERVER_RFPROXY_CHANNEL, str(entry.ct_id), msg)
+
+    def configure_vs_port(self, vs_id, vs_port, dp_port):
+        rms = []
+        rm = RouteMod(RMT_ADD, vs_id)
+        rm.add_match(Match.IN_PORT(vs_port))
+        rm.add_action(Action.SET_VLAN_ID(vs_port))
+        #TODO: warning magic number:
+        CFP_PORT = 1
+        rm.add_action(Action.OUTPUT(CFP_PORT))
+        rm.add_option(Option.PRIORITY(PRIORITY_HIGH))
+        rms.append(rm)
+
+        rm = RouteMod(RMT_ADD, vs_id)
+        rm.add_match(Match.IN_PORT(CFP_PORT))
+        rm.add_match(Match.VLAN_ID(vs_port))
+        #TODO: dont use deferred
+        rm.add_action(Action.STRIP_VLAN_DEFERRED())
+        rm.add_action(Action.OUTPUT(vs_port))
+        rm.add_option(Option.PRIORITY(PRIORITY_HIGH))
+        rms.append(rm)
+        return rms
+
 
 if __name__ == "__main__":
     description = 'RFServer co-ordinates RFClient and RFProxy instances, ' \

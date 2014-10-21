@@ -86,7 +86,7 @@ class Match(TLV):
 
     @staticmethod
     def type_to_bin(matchType, value):
-        if matchType == RFMT_IPV4 or RFMT_IPV4_SRC:
+        if matchType == RFMT_IPV4 or matchType == RFMT_IPV4_SRC:
             return inet_pton(AF_INET, value[0]) + inet_pton(AF_INET, value[1])
         elif matchType == RFMT_IPV6:
             return inet_pton(AF_INET6, value[0]) + inet_pton(AF_INET6, value[1])
@@ -109,7 +109,7 @@ class Match(TLV):
             return str(matchType)
 
     def get_value(self):
-        if self._type == RFMT_IPV4 or RMT_IPV4_SRC:
+        if self._type == RFMT_IPV4 or self._type == RFMT_IPV4_SRC:
             return (inet_ntop(AF_INET, self._value[:4]), inet_ntop(AF_INET, self._value[4:]))
         elif self._type == RFMT_IPV6:
             return (inet_ntop(AF_INET6, self._value[:16]), inet_ntop(AF_INET6, self._value[16:]))
