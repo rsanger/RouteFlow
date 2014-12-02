@@ -1,5 +1,3 @@
-#include <net/if.h>
-#include <arpa/inet.h>
 #include <boost/scoped_array.hpp>
 
 #include "Option.hh"

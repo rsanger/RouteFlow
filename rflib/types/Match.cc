@@ -1,4 +1,3 @@
-#include <net/if.h>
 #include <boost/scoped_array.hpp>
 #include "Match.hh"
 
