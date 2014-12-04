@@ -1,10 +1,11 @@
 #ifndef RFCLIENT_HH
 #define RFCLIENT_HH
 
-#include <net/if.h>
 #include <map>
 #include <vector>
 #include <string>
+
+#include <netlink/route/link.h>
 
 #include "ipc/IPC.h"
 #include "ipc/RFProtocolFactory.h"

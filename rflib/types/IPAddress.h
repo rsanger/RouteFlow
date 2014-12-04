@@ -3,7 +3,8 @@
 
 #include <stdint.h>
 #include <string.h>
-#include <net/if.h>
+#include <netlink/addr.h>
+#include <sys/socket.h>
 #include <arpa/inet.h>
 #include <sstream>
 #include <string>
@@ -26,6 +27,7 @@ class IPAddress {
         IPAddress(const int version, const uint8_t* data);
         IPAddress(const struct in_addr* data);
         IPAddress(const struct in6_addr* data);
+        IPAddress(struct nl_addr* address);
         IPAddress(const int version, int prefix_len);
         ~IPAddress();
 

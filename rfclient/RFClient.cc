@@ -1,12 +1,7 @@
-#include <linux/if_link.h>
 #include <ifaddrs.h>
 #include <syslog.h>
 #include <arpa/inet.h>
-#include <netdb.h>
-#include <netinet/ether.h>
 #include <net/ethernet.h>
-#include <net/if_arp.h>
-#include <netpacket/packet.h>
 #include <sys/ioctl.h>
 #include <sys/socket.h>
 

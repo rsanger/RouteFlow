@@ -14,28 +14,66 @@
 
 #include "converter.h"
 #include "FlowTable.hh"
-#include "FPMServer.hh"
+
+#include <netlink/cache.h>
+#include <netlink/route/rtnl.h>
+#include <netlink/route/route.h>
+#include <netlink/route/neighbour.h>
+#include <netlink/types.h>
 
 using namespace std;
 
 #define EMPTY_MAC_ADDRESS "00:00:00:00:00:00"
 #define ROUTE_COOLDOWN 5000 /* milliseconds */
 
+#ifndef IF_NAMESIZE
+#define IF_NAMESIZE 32
+#endif
+
 static const MACAddress MAC_ADDR_NONE(EMPTY_MAC_ADDRESS);
 
 // TODO: implement a way to pause the flow table updates when the VM is not
 //       associated with a valid datapath
 
-static int HTPollingCb(const struct sockaddr_nl*, struct nlmsghdr *n,
-                       void *arg) {
+/**
+ * Change callbacks are called when a new netlink message is received.
+ */
+static void HTChangeCb( struct nl_cache *cache,
+                        struct nl_object *obj,
+                        int action,
+                        void *arg) {
+    struct rtnl_neigh *neigh;
+    neigh = (struct rtnl_neigh *) obj;
     FlowTable *ft = reinterpret_cast<FlowTable *>(arg);
-    return ft->updateHostTable(n);
+    ft->updateHostTable(neigh, action);
 }
 
-static int RTPollingCb(const struct sockaddr_nl*, struct nlmsghdr *n,
-                       void *arg) {
+static void RTChangeCb( struct nl_cache *cache,
+                        struct nl_object *obj,
+                        int action,
+                        void *arg) {
+    struct rtnl_route *route;
+    route = (struct rtnl_route *) obj;
     FlowTable *ft = reinterpret_cast<FlowTable *>(arg);
-    return ft->updateRouteTable(n);
+    ft->updateRouteTable(route, action);
+}
+
+/**
+ * Iter callbacks are called for each entry in the host and route tables when
+ * the caches are initialised.
+ */
+static void HTIterCb(struct nl_object *obj, void *arg) {
+    struct rtnl_neigh *neigh;
+    neigh = (struct rtnl_neigh *) obj;
+    FlowTable *ft = reinterpret_cast<FlowTable *>(arg);
+    ft->updateHostTable(neigh, NL_ACT_NEW);
+}
+
+static void RTIterCb(struct nl_object *obj, void *arg) {
+    struct rtnl_route *route;
+    route = (struct rtnl_route *) obj;
+    FlowTable *ft = reinterpret_cast<FlowTable *>(arg);
+    ft->updateRouteTable(route, NL_ACT_NEW);
 }
 
 FlowTable::FlowTable(uint64_t id, InterfaceMap *ifMap, SyncQueue<RouteMod> *rm_q, RouteSource source) {
@@ -53,31 +91,9 @@ FlowTable::FlowTable(const FlowTable& other) {
 }
 
 void FlowTable::operator()() {
-    rtnl_open(&rthNeigh, RTMGRP_NEIGH);
-    int rs = setsockopt(rthNeigh.fd, SOL_SOCKET, SO_RCVBUFFORCE, &nl_buffersize, sizeof(nl_buffersize));
-    if (rs != 0) {
-        syslog(LOG_CRIT, "cannot set socket size for neighbors: %d", errno);
-        exit(rs);
-    }
-    HTPolling = boost::thread(&rtnl_listen, &rthNeigh, &HTPollingCb, this);
-
     switch (this->source) {
         case RS_NETLINK: {
-            syslog(LOG_NOTICE, "Netlink interface enabled");
-            rtnl_open(&rth, RTMGRP_IPV4_ROUTE | RTMGRP_IPV6_ROUTE |
-                            RTMGRP_IPV4_MROUTE | RTMGRP_IPV6_MROUTE);
-            int rs = setsockopt(rth.fd, SOL_SOCKET, SO_RCVBUFFORCE, &nl_buffersize, sizeof(nl_buffersize));
-            if (rs != 0) {
-                syslog(LOG_CRIT, "cannot set socket size for routes: %d", errno);
-                exit(rs);
-            }
-            RTPolling = boost::thread(&rtnl_listen, &rth, &RTPollingCb, this);
-            break;
-        }
-        case RS_FPM: {
-            FPMServer *fpm = new FPMServer(this);
-            RTPolling = boost::thread(*fpm);
-            syslog(LOG_NOTICE, "FPM interface enabled");
+            initNLListener();
             break;
         }
         default: {
@@ -88,6 +104,76 @@ void FlowTable::operator()() {
 
     GWResolver = boost::thread(&FlowTable::GWResolverCb, this);
     GWResolver.join();
+}
+
+/**
+ * Initialises the libnl rtnetlink caches.
+ *
+ * Initialises the socket for the cache manager, the cache manager itself, and
+ * a link cache, a neighbour cache and a route cache.
+ *
+ * It then iterates over the existing entries in the neighbour and route caches
+ * and applies HTIterCb and RTIterCb to them respectively.
+ *
+ * It then starts the NLListener thread to poll the socket for updates.
+ *
+ * One socket is used to receive updates for all three caches.
+ */
+void FlowTable::initNLListener() {
+    int err;
+    syslog(LOG_NOTICE, "Netlink interface enabled");
+    sock = nl_socket_alloc();
+
+    err = nl_cache_mngr_alloc(sock, NETLINK_ROUTE, 0, &mngr);
+    if (err < 0) {
+        throw "some kind of problem with the route cache manager!";
+    }
+
+    err = rtnl_route_alloc_cache(sock, AF_UNSPEC, 0, &rt_cache);
+    if (err < 0) {
+        throw "some kind of problem with the route cache!";
+    }
+    err = nl_cache_mngr_add_cache(mngr, rt_cache, &RTChangeCb, this);
+    if (err < 0) {
+        throw "some kind of problem with adding route cache!";
+    }
+
+    err = rtnl_neigh_alloc_cache(sock, &ht_cache);
+    if (err < 0) {
+        throw "some kind of problem with the neigh cache!";
+    }
+    err = nl_cache_mngr_add_cache(mngr, ht_cache, &HTChangeCb, this);
+    if (err < 0) {
+        throw "some kind of problem with adding neigh cache!";
+    }
+
+    err = rtnl_link_alloc_cache(sock, AF_UNSPEC, &link_cache);
+    if (err < 0) {
+        throw "some kind of problem with the route cache!";
+    }
+    err = nl_cache_mngr_add_cache(mngr, link_cache, NULL, NULL);
+    if (err < 0) {
+        throw "some kind of problem with adding the link cache!";
+    }
+
+    nl_cache_foreach(ht_cache, &HTIterCb, this);
+    nl_cache_foreach(rt_cache, &RTIterCb, this);
+
+    NLListener = boost::thread(&FlowTable::NLListenCb, this);
+}
+
+/**
+ * callback for the NL Listener thread. It checks for new netlink messages.
+ * When new messages are found the cache change callbacks will handle updates.
+ */
+void FlowTable::NLListenCb(FlowTable *ft) {
+    int status;
+    while (1) {
+        status = nl_cache_mngr_poll(ft->mngr, 500);
+        if (status < 0) {
+            throw "Error polling for new netlink messages";
+        }
+    }
 }
 
 uint64_t FlowTable::get_vm_id() {
@@ -101,9 +187,8 @@ void FlowTable::clear() {
 }
 
 void FlowTable::interrupt() {
-    HTPolling.interrupt();
     GWResolver.interrupt();
-    RTPolling.interrupt();
+    NLListener.interrupt();
 }
 
 void FlowTable::sendRm(RouteMod rm) {
@@ -240,69 +325,71 @@ int rta_to_ip(unsigned char family, const void *ip, IPAddress& result) {
     return 0;
 }
 
-int FlowTable::updateHostTable(struct nlmsghdr *n) {
-    char error[BUFSIZ];
-    struct ndmsg *ndmsg_ptr = (struct ndmsg *) NLMSG_DATA(n);
-    struct rtattr *rtattr_ptr;
-
-    char intf[IF_NAMESIZE + 1];
-    memset(intf, 0, IF_NAMESIZE + 1);
+/**
+ * When the netlink neighbour cache recieves an update, this function
+ * generates a HostEntry object, adds it to the hostTable, sends it to the
+ * hardware and stops neighbour discovery for that host
+ *
+ * args:
+ *  neigh - the libnl neighbour object received by the cache
+ *  action - the netlink message action
+ */
+void FlowTable::updateHostTable(struct rtnl_neigh *neigh,
+                                int action) {
+    struct nl_addr *nw_addr, *hw_addr;
+    int ifindex, state;
 
     boost::this_thread::interruption_point();
 
-    if (if_indextoname((unsigned int) ndmsg_ptr->ndm_ifindex, (char *) intf) == NULL) {
-        strerror_r(errno, error, BUFSIZ);
-        syslog(LOG_ERR, "HostTable: %s", error);
-        return 0;
+    if (action != NL_ACT_NEW) {
+        /**
+         * TODO: We should definitely include support for hosts being deleted.
+         * It is also possible that hosts will get lost as they are
+         * added if they exist in the cache and change from a non NUD_VALID
+         * state to a NUD_VALID state.
+         */
+        return;
     }
 
+    state = rtnl_neigh_get_state(neigh);
+    if (!(state & NUD_VALID)) {
+        /**
+         * TODO: NUD_VALID includes stale entries, we may wish to handle these
+         * differently to NUD_REACHABLE entries.
+         */
+        return;
+    }
+
+    ifindex = rtnl_neigh_get_ifindex(neigh);
+    char intf[IF_NAMESIZE + 1];
+    memset(intf, 0, IF_NAMESIZE + 1);
+    rtnl_link_i2name(link_cache, ifindex, intf, sizeof(intf));
     if (strcmp(intf, DEFAULT_RFCLIENT_INTERFACE) == 0) {
-        return 0;
+        return;
     }
 
     boost::scoped_ptr<HostEntry> hentry(new HostEntry());
 
-    char mac[2 * IFHWADDRLEN + 5 + 1];
-    memset(mac, 0, 2 * IFHWADDRLEN + 5 + 1);
-
-    rtattr_ptr = (struct rtattr *) RTM_RTA(ndmsg_ptr);
-    int rtmsg_len = RTM_PAYLOAD(n);
-
-    for (; RTA_OK(rtattr_ptr, rtmsg_len); rtattr_ptr = RTA_NEXT(rtattr_ptr, rtmsg_len)) {
-        switch (rtattr_ptr->rta_type) {
-        case RTA_DST: {
-            if (rta_to_ip(ndmsg_ptr->ndm_family, RTA_DATA(rtattr_ptr),
-                          hentry->address) < 0) {
-                return 0;
-            }
-            break;
-        }
-        case NDA_LLADDR:
-            if (strncpy(mac, ether_ntoa(((ether_addr *) RTA_DATA(rtattr_ptr))), sizeof(mac)) == NULL) {
-                strerror_r(errno, error, BUFSIZ);
-                syslog(LOG_ERR, "HostTable: %s", error);
-                return 0;
-            }
-            break;
-        default:
-            break;
-        }
-    }
+    hentry->address = IPAddress(rtnl_neigh_get_dst(neigh));
+    const string host = hentry->address.toString();
 
     if (getInterface(intf, "host", &hentry->interface) != 0) {
-        return 0;
+        return;
     }
 
-    const string host = hentry->address.toString();
+    int MACBUFSIZ = 2 * IFHWADDRLEN + 5 + 1;
+    char mac[MACBUFSIZ];
+    memset(mac, 0, MACBUFSIZ);
+    hw_addr = rtnl_neigh_get_lladdr(neigh);
+    nl_addr2str(hw_addr, mac, MACBUFSIZ);
+    if (strcmp((char *) mac, "none") == 0) {
+        syslog(LOG_DEBUG, "Received host entry ip=%s with blank mac. Ignoring", host.c_str());
+        return;
+    }
     hentry->hwaddress = MACAddress(mac);
 
-    if (strlen(mac) == 0) {
-        syslog(LOG_DEBUG, "Received host entry ip=%s with blank mac. Ignoring", host.c_str());
-        return 0;
-    }
-
-    switch (n->nlmsg_type) {
-        case RTM_NEWNEIGH: {
+    switch (action) {
+        case NL_ACT_NEW: {
             syslog(LOG_DEBUG, "netlink->RTM_NEWNEIGH: ip=%s, mac=%s",
                    host.c_str(), mac);
             this->sendToHw(RMT_ADD, *hentry);
@@ -318,17 +405,26 @@ int FlowTable::updateHostTable(struct nlmsghdr *n) {
         }
     }
 
-    return 0;
+    return;
 }
 
-int FlowTable::updateRouteTable(struct nlmsghdr *n) {
-    struct rtmsg *rtmsg_ptr = (struct rtmsg *) NLMSG_DATA(n);
+/**
+ * When the netlink route table cache recieves an update, this function
+ *
+ * args:
+ *  neigh - the libnl neighbour object received by the cache
+ *  action - the netlink message action
+ */
+void FlowTable::updateRouteTable(  struct rtnl_route *route,
+                                   int action) {
+    struct nl_addr *address, *gateway;
+    struct rtnl_nexthop *nh;
+    int family, nhcount, i, prefix_len, ifindex;
 
     boost::this_thread::interruption_point();
 
-    if (!((n->nlmsg_type == RTM_NEWROUTE || n->nlmsg_type == RTM_DELROUTE) &&
-          rtmsg_ptr->rtm_table == RT_TABLE_MAIN)) {
-        return 0;
+    if (!(action == NL_ACT_NEW || action == NL_ACT_DEL)) {
+        return;
     }
 
     boost::scoped_ptr<RouteEntry> rentry(new RouteEntry());
@@ -336,81 +432,56 @@ int FlowTable::updateRouteTable(struct nlmsghdr *n) {
     char intf[IF_NAMESIZE + 1];
     memset(intf, 0, IF_NAMESIZE + 1);
 
-    struct rtattr *rtattr_ptr;
-    rtattr_ptr = (struct rtattr *) RTM_RTA(rtmsg_ptr);
-    int rtmsg_len = RTM_PAYLOAD(n);
+    if (rtnl_route_get_table(route) != RT_TABLE_MAIN) {
+        return;
+    }
 
-    for (; RTA_OK(rtattr_ptr, rtmsg_len); rtattr_ptr = RTA_NEXT(rtattr_ptr, rtmsg_len)) {
-        switch (rtattr_ptr->rta_type) {
-        case RTA_DST:
-            if (rta_to_ip(rtmsg_ptr->rtm_family, RTA_DATA(rtattr_ptr),
-                          rentry->address) < 0) {
-                return 0;
-            }
-            break;
-        case RTA_GATEWAY:
-            if (rta_to_ip(rtmsg_ptr->rtm_family, RTA_DATA(rtattr_ptr),
-                          rentry->gateway) < 0) {
-                return 0;
-            }
-            break;
-        case RTA_OIF:
-            if_indextoname(*((int *) RTA_DATA(rtattr_ptr)), (char *) intf);
-            break;
-        case RTA_MULTIPATH: {
-            struct rtnexthop *rtnhp_ptr = (struct rtnexthop *) RTA_DATA(
-                    rtattr_ptr);
-            int rtnhp_len = RTA_PAYLOAD(rtattr_ptr);
+    switch (rtnl_route_get_family(route)) {
+    case AF_INET:
+        family = IPV4;
+        break;
+    case AF_INET6:
+        family = IPV6;
+        break;
+    default:
+        return;
+    }
 
-            if (rtnhp_len < (int) sizeof(*rtnhp_ptr)) {
-                break;
-            }
-
-            if (rtnhp_ptr->rtnh_len > rtnhp_len) {
-                break;
-            }
-
-            if_indextoname(rtnhp_ptr->rtnh_ifindex, (char *) intf);
-
-            int attrlen = rtnhp_len - sizeof(struct rtnexthop);
-
-            if (attrlen) {
-                struct rtattr *attr = RTNH_DATA(rtnhp_ptr);
-
-                for (; RTA_OK(attr, attrlen); attr = RTA_NEXT(attr, attrlen))
-                    if (attr->rta_type == RTA_GATEWAY) {
-                        if (rta_to_ip(rtmsg_ptr->rtm_family, RTA_DATA(attr),
-                                      rentry->gateway) < 0) {
-                            return 0;
-                        }
-                        break;
-                    }
-            }
-        }
-            break;
-        default:
-            break;
+    /**
+     * the route gateway is given as a list of nexthop objects, which may or
+     * may not actually have a legitimate gateway.
+     * When there is more than one legitimate gateway, we select one
+     * arbitrarily.
+     */
+    nhcount = rtnl_route_get_nnexthops(route);
+    i = 0;
+    while (!gateway) {
+        nh = rtnl_route_nexthop_n(route, i);
+        gateway = rtnl_route_nh_get_gateway(nh);
+        if (++i == nhcount) {
+            return;
         }
     }
 
+    rentry->gateway = IPAddress(gateway);
+
+    ifindex = rtnl_route_nh_get_ifindex(nh);
+    rtnl_link_i2name(link_cache, ifindex, intf, sizeof(intf));
+
     if (strcmp(intf, DEFAULT_RFCLIENT_INTERFACE) == 0) {
-        return 0;
+        return;
     }
 
     if (getInterface(intf, "route", &rentry->interface) != 0) {
-        return 0;
+        return;
     }
 
-    switch (rtmsg_ptr->rtm_family) {
-    case AF_INET6:
-        rentry->netmask = IPAddress(IPV6, rtmsg_ptr->rtm_dst_len);
-        break;
-    default:
-        rentry->netmask = IPAddress(IPV4, rtmsg_ptr->rtm_dst_len);
-        break;
-    }
+    address = rtnl_route_get_dst(route);
+    rentry->address = IPAddress(address);
 
-    if (rtmsg_ptr->rtm_dst_len == 0) {
+    prefix_len = nl_addr_get_prefixlen(address);
+    rentry->netmask = IPAddress(family, prefix_len);
+    if (prefix_len == 0) {
         /* Default route. Zero the address. */
         rentry->address = rentry->netmask;
     }
@@ -419,20 +490,20 @@ int FlowTable::updateRouteTable(struct nlmsghdr *n) {
     string mask = rentry->netmask.toString();
     string gw = rentry->gateway.toString();
 
-    switch (n->nlmsg_type) {
-        case RTM_NEWROUTE:
+    switch (action) {
+        case NL_ACT_NEW:
             syslog(LOG_DEBUG, "netlink->RTM_NEWROUTE: net=%s, mask=%s, gw=%s",
                    net.c_str(), mask.c_str(), gw.c_str());
             this->pendingRoutes.push(PendingRoute(RMT_ADD, *rentry));
             break;
-        case RTM_DELROUTE:
+        case NL_ACT_DEL:
             syslog(LOG_DEBUG, "netlink->RTM_DELROUTE: net=%s, mask=%s, gw=%s",
                    net.c_str(), mask.c_str(), gw.c_str());
             this->pendingRoutes.push(PendingRoute(RMT_DELETE, *rentry));
             break;
     }
 
-    return 0;
+    return;
 }
 
 /**
@@ -635,79 +706,4 @@ int FlowTable::sendToHw(RouteModType mod, const IPAddress& addr,
                       gw_str.c_str(), local_iface.port);
     this->sendRm(rm);
     return 0;
-}
-
-/*
- * Add or remove a Push, Pop or Swap operation matching on a label only
- * For matching on IP, update FTN (not yet implemented) is needed
- *
- * TODO: If an error occurs here, the NHLFE is silently dropped. Fix this.
- */
-void FlowTable::updateNHLFE(nhlfe_msg_t *nhlfe_msg) {
-    RouteMod msg;
-
-    if (nhlfe_msg->table_operation == ADD_LSP) {
-        msg.set_mod(RMT_ADD);
-    } else if (nhlfe_msg->table_operation == REMOVE_LSP) {
-        msg.set_mod(RMT_DELETE);
-    } else {
-        syslog(LOG_WARNING, "Unrecognised NHLFE table operation %d",
-               nhlfe_msg->table_operation);
-        return;
-    }
-    msg.set_id(FlowTable::vm_id);
-
-    // We need the next-hop IP to determine which interface to use.
-    int version = nhlfe_msg->ip_version;
-    uint8_t* ip_data = reinterpret_cast<uint8_t*>(&nhlfe_msg->next_hop_ip);
-    IPAddress gwIP(version, ip_data);
-
-    // Get our interface for packet egress.
-    Interface iface;
-    map<string, HostEntry>::iterator iter;
-    iter = FlowTable::hostTable.find(gwIP.toString());
-    if (iter == FlowTable::hostTable.end()) {
-        syslog(LOG_WARNING, "Failed to locate interface for LSP");
-        return;
-    } else {
-        iface = iter->second.interface;
-    }
-
-    if (!iface.active) {
-        syslog(LOG_WARNING, 
-               "Cannot send route via inactive interface %s",
-               iface.name.c_str());
-        return;
-    }
-
-    // Get the MAC address corresponding to our gateway.
-    const MACAddress& gwMAC = findHost(gwIP);
-    if (gwMAC == MAC_ADDR_NONE) {
-        syslog(LOG_ERR, "Failed to resolve gateway MAC for NHLFE");
-        return;
-    }
-
-    if (setEthernet(msg, iface, gwMAC) != 0) {
-        return;
-    }
-
-    // Match on in_label only - matching on IP is the domain of FTN not NHLFE
-    msg.add_match(Match(RFMT_MPLS, nhlfe_msg->in_label));
-
-    if (nhlfe_msg->nhlfe_operation == PUSH) {
-        msg.add_action(Action(RFAT_PUSH_MPLS, ntohl(nhlfe_msg->out_label)));
-    } else if (nhlfe_msg->nhlfe_operation == POP) {
-        msg.add_action(Action(RFAT_POP_MPLS, (uint32_t)0));
-    } else if (nhlfe_msg->nhlfe_operation == SWAP) {
-        msg.add_action(Action(RFAT_SWAP_MPLS, ntohl(nhlfe_msg->out_label)));
-    } else {
-        syslog(LOG_ERR, "Unknown lsp_operation");
-        return;
-    }
-
-    // msg.add_action(Action(RFAT_OUTPUT, iface.port));
-    msg.set_vm_port(iface.port);
-
-    this->sendRm(msg);
-    return;
 }

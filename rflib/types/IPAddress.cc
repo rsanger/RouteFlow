@@ -63,6 +63,30 @@ IPAddress::IPAddress(const struct in6_addr* data) {
     memcpy(this->data, data, this->length);
 }
 
+IPAddress::IPAddress(struct nl_addr* address) {
+    struct sockaddr_storage sa_buf;
+    struct sockaddr_in6 *sa6 = (struct sockaddr_in6 *) &sa_buf;
+    struct sockaddr_in *sa = (struct sockaddr_in *) &sa_buf;
+    socklen_t socklen = sizeof(sockaddr_storage);
+    nl_addr_fill_sockaddr(address, (struct sockaddr *) &sa_buf, &socklen);
+    switch (nl_addr_get_family(address)){
+    case AF_INET6: {
+        this->init(IPV6);
+        memcpy(this->data, &sa6->sin6_addr, this->length);
+    }
+        break;
+    case AF_INET: {
+        this->init(IPV4);
+        memcpy(this->data, &sa->sin_addr, this->length);
+        break;
+    }
+    default:
+        throw "Invalid address!";
+    }
+
+
+}
+
 IPAddress::IPAddress(const int version, int prefix_len) {
     this->init(version);
 

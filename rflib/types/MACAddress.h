@@ -3,8 +3,7 @@
 
 #include <stdint.h>
 #include <string.h>
-#include <net/if.h>
-
+#include <netlink/route/link.h>
 #include <sstream>
 #include <iomanip>
 #include <string>

@@ -1,7 +1,7 @@
 bin_PROGRAMS = rfclient
 
 rfclient_CXXFLAGS = -I$(top_srcdir)/rflib -I$(top_builddir)/rflib/bson @AM_CXXFLAGS@
-AM_LDFLAGS = -lrt -lnetlink -lutil @AM_LDFLAGS@
+AM_LDFLAGS = -lrt -lutil @AM_LDFLAGS@
 if USE_MONGO
 AM_LDFLAGS += -lmongoclient
 else
@@ -15,8 +15,8 @@ AM_LDFLAGS += -lzmq
 endif
 
 rfclient_SOURCES = libnetlink.hh Interface.hh HostEntry.hh RouteEntry.hh \
-	SyncQueue.hh PendingRoute.hh PortMapper.hh PortMapper.cc fpm.h \
-	fpm_lsp.h FPMServer.hh FPMServer.cc FlowTable.cc FlowTable.hh \
+	SyncQueue.hh PendingRoute.hh PortMapper.hh PortMapper.cc \
+	FlowTable.cc FlowTable.hh \
 	RFClient.hh RFClient.cc
 
 # For now, fpm.h and fpm_lsp.h are included in the rfclient/ directory, however

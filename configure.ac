@@ -22,6 +22,13 @@ AC_CHECK_HEADERS([boost/thread.hpp], [], [AC_MSG_ERROR([Cannot find Boost thread
 
 LIBS="-lboost_thread -lboost_system -lboost_filesystem -lboost_program_options"
 
+PKG_CHECK_MODULES(LIBNL3, libnl-route-3.0 >= 3.1, [have_libnl3=yes], [have_libnl3=no])
+
+if (test "${have_libnl3}" = "yes"); then
+        CFLAGS+=" $LIBNL3_CFLAGS"
+        LIBS+=" $LIBNL3_LIBS"
+fi
+
 AC_ARG_WITH([ipc],
     [AS_HELP_STRING([--with-ipc=prefix],
         [Set IPC backend, valid options are "mongo" or "zeromq".])],

@@ -20,8 +20,8 @@ PIP_OPTS=""
 ROUTEFLOW_GIT="https://github.com/routeflow/RouteFlow.git"
 DEPENDENCIES="build-essential git-core libboost-dev libboost-dev \
     libboost-program-options-dev libboost-thread-dev \
-    libboost-filesystem-dev libboost-system-dev iproute-dev python-dev \
-    python-pip python-bson"
+    libboost-filesystem-dev libboost-system-dev libnl-3-dev libnl-route-3 \
+    python-dev python-pip python-bson"
 
 usage() {
     echo "usage:$0 [-hcqvdsgiu] [-m MONGO_VERSION] [-o OVS_VERSION]" \
