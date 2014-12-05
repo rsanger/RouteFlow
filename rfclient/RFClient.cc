@@ -322,54 +322,6 @@ bool RFClient::process(const string &, const string &, const string &,
     return true;
 }
 
-/* Set the MAC address of the interface. */
-int RFClient::set_hwaddr_byname(const char * ifname, uint8_t hwaddr[],
-                                int16_t flags) {
-    char error[BUFSIZ];
-    struct ifreq ifr;
-    int sock;
-
-    if ((NULL == ifname) || (NULL == hwaddr)) {
-        return -1;
-    }
-
-    sock = socket(AF_INET, SOCK_STREAM, 0);
-    if (sock < 0) {
-        return -1;
-    }
-
-    strncpy(ifr.ifr_name, ifname, sizeof(ifr.ifr_name) - 1);
-    ifr.ifr_name[sizeof(ifr.ifr_name) - 1] = '\0';
-    ifr.ifr_ifru.ifru_flags = flags & (~IFF_UP);
-
-    if (-1 == ioctl(sock, SIOCSIFFLAGS, &ifr)) {
-        strerror_r(errno, error, BUFSIZ);
-        syslog(LOG_WARNING, "ioctl(SIOCSIFFLAGS): %s", error);
-        return -1;
-    }
-
-    ifr.ifr_ifru.ifru_hwaddr.sa_family = ARPHRD_ETHER;
-    std::memcpy(ifr.ifr_ifru.ifru_hwaddr.sa_data, hwaddr, IFHWADDRLEN);
-
-    if (-1 == ioctl(sock, SIOCSIFHWADDR, &ifr)) {
-        strerror_r(errno, error, BUFSIZ);
-        syslog(LOG_WARNING, "ioctl(SIOCSIFHWADDR): %s", error);
-        return -1;
-    }
-
-    ifr.ifr_ifru.ifru_flags = flags | IFF_UP;
-
-    if (-1 == ioctl(sock, SIOCSIFFLAGS, &ifr)) {
-        strerror_r(errno, error, BUFSIZ);
-        syslog(LOG_WARNING, "ioctl(SIOCSIFFLAGS): %s", error);
-        return -1;
-    }
-
-    close(sock);
-
-    return 0;
-}
-
 /**
  * Converts the given interface string into a logical port number
  * (ignoring VLAN number).

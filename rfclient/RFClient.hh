@@ -45,7 +45,6 @@ class RFClient : private RFProtocolFactory, private IPCMessageProcessor,
         void sendInterfaceToControllerRouteMods(const Interface &iface);
         void sendAllInterfaceToControllerRouteMods(uint32_t vm_port);
         void deactivateInterfaces(uint32_t vm_port);
-        int set_hwaddr_byname(const char * ifname, uint8_t hwaddr[], int16_t flags);
         uint32_t get_port_number(string ifName, bool *physical, uint32_t *vlan);
         map<string, Interface> load_interfaces();
 };
