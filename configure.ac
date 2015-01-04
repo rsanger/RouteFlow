@@ -25,7 +25,7 @@ LIBS="-lboost_thread -lboost_system -lboost_filesystem -lboost_program_options"
 PKG_CHECK_MODULES(LIBNL3, libnl-route-3.0 >= 3.1, [have_libnl3=yes], [have_libnl3=no])
 
 if (test "${have_libnl3}" = "yes"); then
-        CFLAGS+=" $LIBNL3_CFLAGS"
+        CPPFLAGS+=" $LIBNL3_CFLAGS"
         LIBS+=" $LIBNL3_LIBS"
 fi
 
