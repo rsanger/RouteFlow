@@ -12,7 +12,7 @@
 #include "FlowTable.hh"
 #include "PortMapper.hh"
 
-const int max_rm_outstanding = 10;
+const int max_rm_outstanding = 1;
 
 class RFClient : private RFProtocolFactory, private IPCMessageProcessor,
                  public InterfaceMap {
@@ -40,7 +40,8 @@ class RFClient : private RFProtocolFactory, private IPCMessageProcessor,
         bool process(const string &from, const string &to,
                      const string &channel, IPCMessage& msg);
         void sendRm(RouteMod rm);
-        RouteMod controllerRouteMod(uint32_t port, uint32_t vlan, MACAddress hwaddress, 
+        RouteMod controllerRouteMod(uint32_t port, uint32_t vlan,
+                                    bool matchMac, MACAddress hwaddress,
                                     bool matchIP, const IPAddress &ip_address);
         void sendInterfaceToControllerRouteMods(const Interface &iface);
         void sendAllInterfaceToControllerRouteMods(uint32_t vm_port);

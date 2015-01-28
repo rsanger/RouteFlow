@@ -13,13 +13,16 @@ apt-get -y --force-yes install lxc
 mkdir -p $LXCDIR
 lxc-create -t ubuntu -n base || exit 1
 
+cp -f /etc/resolv.conf $LXCDIR/base/rootfs/etc
+
 chroot $LXCDIR/base/rootfs apt-get update
 # !!!
 # ADD THE PACKETS YOU NEED TO INSTALL HERE
 # !!!
 chroot $LXCDIR/base/rootfs apt-get -y --force-yes install quagga \
     libboost-thread-dev libboost-system-dev libboost-filesystem-dev \
-    libboost-program-options-dev rsyslog vlan tcpdump
+    libboost-program-options-dev libnl-3-dev libnl-route-3-dev \
+    rsyslog vlan tcpdump telnet
 # !!!
 
 if [ -e /usr/local/lib/libzmq.so ]; then

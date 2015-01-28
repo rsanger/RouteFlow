@@ -7,6 +7,7 @@ fi
 
 SCRIPT_NAME="rftest2"
 LXCDIR=/var/lib/lxc
+IPC="zmq"
 MONGODB_CONF=/etc/mongodb.conf
 MONGODB_PORT=27017
 MONGODB_ADDR=192.168.10.1
@@ -16,6 +17,7 @@ if [ -d ./build ]; then
 else
     RF_HOME=..
 fi
+
 export PATH=$PATH:/usr/local/bin:/usr/local/sbin
 export PYTHONPATH=$PYTHONPATH:$RF_HOME
 
@@ -95,20 +97,25 @@ trap "reset 0; exit 0" INT
 echo_bold "-> Setting up the management bridge (lxcbr0)..."
 ifconfig lxcbr0 $MONGODB_ADDR up
 
-echo_bold "-> Setting up MongoDB..."
-sed -i "/bind_ip/c\bind_ip = 127.0.0.1,$MONGODB_ADDR" $MONGODB_CONF
-service mongodb restart
-wait_port_listen $MONGODB_PORT
+if [ $IPC = "mongodb" ]; then
+	echo_bold "-> Setting up MongoDB..."
+	sed -i "/bind_ip/c\bind_ip = 127.0.0.1,$MONGODB_ADDR" $MONGODB_CONF
+	service mongodb restart
+	wait_port_listen $MONGODB_PORT
+fi
+
+echo_bold "-> Starting RFServer..."
+nice -n 20 ./rfserver/rfserver.py rftest/rftest2config.csv &
 
 echo_bold "-> Configuring the virtual machines..."
 
 for vm in rfvmA rfvmB rfvmC rfvmD; do
     mkdir "/var/lib/lxc/$vm/rootfs/opt/rfclient"
-    cp build/rfclient "/var/lib/lxc/$vm/rootfs/opt/rfclient/rfclient"
+    cp rfclient/rfclient "/var/lib/lxc/$vm/rootfs/opt/rfclient/rfclient"
 
     # We sleep for a few seconds to wait for the interfaces to go up
-    echo <<EOF > "/var/lib/lxc/$vm/rootfs/root/run_rfclient.sh"
-#!/bin/sh"
+    cat <<EOF > "/var/lib/lxc/$vm/rootfs/root/run_rfclient.sh"
+#!/bin/sh
 sleep 3
 /etc/init.d/quagga start
 /opt/rfclient/rfclient 2>&1 >/var/log/rfclient.log
@@ -120,13 +127,8 @@ EOF
 done
 
 echo_bold "-> Starting the controller and RFPRoxy..."
-cd ryu-rfproxy
-ryu-manager rfproxy.py &
-cd -
+ryu-manager --use-stderr --ofp-tcp-listen-port=$CONTROLLER_PORT ryu-rfproxy/rfproxy.py &
 wait_port_listen $CONTROLLER_PORT
-
-echo_bold "-> Starting RFServer..."
-./rfserver/rfserver.py rftest/rftest2config.csv &
 
 echo_bold "-> Starting the control plane network (dp0 VS)..."
 ovs-vsctl add-br dp0
@@ -139,6 +141,8 @@ ovs-vsctl add-port dp0 rfvmA.4
 ovs-vsctl add-port dp0 rfvmD.4
 ovs-vsctl set Bridge dp0 other-config:datapath-id=7266767372667673
 ovs-vsctl set-controller dp0 tcp:127.0.0.1:$CONTROLLER_PORT
+ovs-vsctl set Bridge dp0 protocols=OpenFlow13
+ovs-ofctl -O OpenFlow13 add-flow dp0 actions=CONTROLLER:65509
 
 echo_bold "---"
 echo_bold "This test is up and running."

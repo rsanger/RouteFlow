@@ -171,17 +171,20 @@ void RFClient::sendRm(RouteMod rm) {
     this->rm_q.push(rm);
 }
 
-RouteMod RFClient::controllerRouteMod(uint32_t port, uint32_t vlan, MACAddress hwaddress,
+RouteMod RFClient::controllerRouteMod(uint32_t port, uint32_t vlan,
+                                      bool matchMac, MACAddress hwaddress,
                                       bool matchIP, const IPAddress &ip_address) {
     RouteMod rm;
     rm.set_mod(RMT_CONTROLLER);
     rm.set_id(this->flowTable->get_vm_id());
     rm.set_vm_port(port);
-    rm.add_match(Match(RFMT_ETHERNET, hwaddress.toString()));
+    if (matchMac) {
+        rm.add_match(Match(RFMT_ETHERNET, hwaddress.toString()));
+    }
     if (vlan) {
         rm.add_match(Match(RFMT_VLAN_ID, vlan));
     }
-    if (matchIP ){
+    if (matchIP){
         if (ip_address.getVersion() == IPV4) {
             rm.add_match(Match(RFMT_IPV4, ip_address, IPAddress(IPV4, FULL_IPV4_PREFIX)));
         } else {
@@ -203,33 +206,45 @@ void RFClient::sendInterfaceToControllerRouteMods(const Interface &iface) {
          ++it) {
          if (it->getVersion() == IPV4) {
              /* ICMP traffic. */
-             rm = controllerRouteMod(port, vlan, hwaddress, true, *it);
+             rm = controllerRouteMod(port, vlan, true, hwaddress, true, *it);
              rm.add_match(Match(RFMT_NW_PROTO, (uint16_t)IPPROTO_ICMP));
              sendRm(rm);
              /* ARP */
-             rm = controllerRouteMod(port, vlan, hwaddress, false, *it);
+             rm = controllerRouteMod(port, vlan, true, hwaddress, false, *it);
              rm.add_match(Match(RFMT_ETHERTYPE, (uint16_t)ETHERTYPE_ARP));
              sendRm(rm);
          } else {
              /* TODO: handle neighbor solicitation et al specifically, 
-                      like we do for IPv4 and ARP. */
-             rm = controllerRouteMod(port, vlan, hwaddress, true, *it);
-             rm.add_match(Match(RFMT_NW_PROTO, (uint16_t)IPPROTO_ICMPV6));
-             sendRm(rm);
-             rm = controllerRouteMod(port, vlan, hwaddress, false, *it);
+                      like we do for IPv4 and ARP. Will need to implement
+                      IPV6/ICMP6 type code checking. */
+             rm = controllerRouteMod(port, vlan, false, hwaddress, false, *it);
              rm.add_match(Match(RFMT_ETHERTYPE, (uint16_t)ETHERTYPE_IPV6));
              rm.add_match(Match(RFMT_NW_PROTO, (uint16_t)IPPROTO_ICMPV6));
              rm.add_option(Option(RFOT_PRIORITY, (uint16_t)(PRIORITY_LOW + 1)));
              sendRm(rm);
+             rm = controllerRouteMod(port, vlan, true, hwaddress, true , *it);
+             rm.add_match(Match(RFMT_ETHERTYPE, (uint16_t)ETHERTYPE_IPV6));
+             rm.add_match(Match(RFMT_NW_PROTO, (uint16_t)IPPROTO_ICMPV6));
+             sendRm(rm);
          }
          /* BGP */
-         rm = controllerRouteMod(port, vlan, hwaddress, true, *it);
+         rm = controllerRouteMod(port, vlan, true, hwaddress, true, *it);
          rm.add_match(Match(RFMT_NW_PROTO, (uint16_t)IPPROTO_TCP));
          rm.add_match(Match(RFMT_TP_SRC, (uint16_t)TPORT_BGP));
          sendRm(rm);
-         rm = controllerRouteMod(port, vlan, hwaddress, true, *it);
+         rm = controllerRouteMod(port, vlan, true, hwaddress, true, *it);
          rm.add_match(Match(RFMT_NW_PROTO, (uint16_t)IPPROTO_TCP));
          rm.add_match(Match(RFMT_TP_DST, (uint16_t)TPORT_BGP));
+         sendRm(rm);
+         /* OSPF for IPv4 */
+         rm = controllerRouteMod(port, vlan, false, hwaddress, false, *it);
+         rm.add_match(Match(RFMT_ETHERTYPE, (uint16_t)ETHERTYPE_IP));
+         rm.add_match(Match(RFMT_NW_PROTO, (uint16_t)IPPROTO_OSPF));
+         sendRm(rm);
+         /* OSPF for IPv6 */
+         rm = controllerRouteMod(port, vlan, false, hwaddress, false, *it);
+         rm.add_match(Match(RFMT_ETHERTYPE, (uint16_t)ETHERTYPE_IPV6));
+         rm.add_match(Match(RFMT_NW_PROTO, (uint16_t)IPPROTO_OSPF));
          sendRm(rm);
          /* TODO: add other IGP traffic here - RIPv2 et al */
     }

@@ -203,7 +203,7 @@ uint8_t TLV::type_from_BSON(mongo::BSONObj bson) {
 
 boost::shared_array<uint8_t> TLV::value_from_BSON(mongo::BSONObj bson,
                                                   byte_order order) {
-    boost::shared_array<uint8_t> arr(NULL);
+    boost::shared_array<uint8_t> arr;
 
     const mongo::BSONElement& bvalue = bson["value"];
     if (bvalue.type() != mongo::BinData)
