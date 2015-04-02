@@ -456,13 +456,16 @@ void FlowTable::updateRouteTable(  struct rtnl_route *route,
      * arbitrarily.
      */
     nhcount = rtnl_route_get_nnexthops(route);
-    for (i = 0; !gateway; i++) {
-        if (i == nhcount) {
-            syslog(LOG_DEBUG, "received route with no gateway, ignoring");
-            return;
-        }
+    for (i = 0; i < nhcount; i++) {
         nh = rtnl_route_nexthop_n(route, i);
         gateway = rtnl_route_nh_get_gateway(nh);
+        if (gateway) {
+            break;
+        }
+    }
+    if (!gateway) {
+            syslog(LOG_DEBUG, "received route with no gateway, ignoring");
+            return;
     }
 
     rentry->gateway = IPAddress(gateway);
