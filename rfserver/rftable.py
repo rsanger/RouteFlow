@@ -89,7 +89,6 @@ class RFTable(EntryTable):
     def is_dp_registered(self, ct_id, dp_id):
         return bool(self.get_dp_entries(ct_id, dp_id))
 
-
 class RFConfig(EntryTable):
     def __init__(self, ifile):
         EntryTable.__init__(self, RFCONFIG_NAME, RFCONFIGENTRY)
@@ -164,17 +163,22 @@ class RFISLConf(EntryTable):
         results.extend(self.get_entries(rem_ct=ct, rem_id=id_, rem_port=port))
         return results
 
+class BaseEntry:
+    def from_dict(self, data):
+        vars(self).clear()
+        vars(self).update(data)
+        self.id = self._id
+        del self._id
 
-# Convenience functions for packing/unpacking to a dict for BSON representation
-def load_from_dict(src, obj, attr):
-    setattr(obj, attr, src[attr])
+    def to_dict(self):
+        data = vars(self).copy()
+        if data['id'] is not None:
+            data['_id'] = data['id']
+        del data['id']
+        return data
 
 
-def pack_into_dict(dest, obj, attr):
-    dest[attr] = getattr(obj, attr)
-
-
-class RFEntry:
+class RFEntry(BaseEntry):
     def __init__(self, vm_id=None, vm_port=None, ct_id=None, dp_id=None,
                  dp_port=None, vs_id=None, vs_port=None, eth_addr=None):
         self.id = None
@@ -260,33 +264,8 @@ class RFEntry:
                               self.ct_id,
                               self.get_status())
 
-    def from_dict(self, data):
-        self.id = data["_id"]
-        load_from_dict(data, self, "vm_id")
-        load_from_dict(data, self, "vm_port")
-        load_from_dict(data, self, "ct_id")
-        load_from_dict(data, self, "dp_id")
-        load_from_dict(data, self, "dp_port")
-        load_from_dict(data, self, "vs_id")
-        load_from_dict(data, self, "vs_port")
-        load_from_dict(data, self, "eth_addr")
 
-    def to_dict(self):
-        data = {}
-        if self.id is not None:
-            data["_id"] = self.id
-        pack_into_dict(data, self, "vm_id")
-        pack_into_dict(data, self, "vm_port")
-        pack_into_dict(data, self, "ct_id")
-        pack_into_dict(data, self, "dp_id")
-        pack_into_dict(data, self, "dp_port")
-        pack_into_dict(data, self, "vs_id")
-        pack_into_dict(data, self, "vs_port")
-        pack_into_dict(data, self, "eth_addr")
-        return data
-
-
-class RFISLEntry:
+class RFISLEntry(BaseEntry):
     def __init__(self, vm_id=None, ct_id=None, dp_id=None,  dp_port=None,
                  eth_addr=None, rem_ct=None, rem_id=None, rem_port=None,
                  rem_eth_addr=None):
@@ -358,35 +337,8 @@ class RFISLEntry:
         else:
             return RFISL_ACTIVE
 
-    def from_dict(self, data):
-        self.id = data["_id"]
-        load_from_dict(data, self, "vm_id")
-        load_from_dict(data, self, "ct_id")
-        load_from_dict(data, self, "dp_id")
-        load_from_dict(data, self, "dp_port")
-        load_from_dict(data, self, "eth_addr")
-        load_from_dict(data, self, "rem_ct")
-        load_from_dict(data, self, "rem_id")
-        load_from_dict(data, self, "rem_port")
-        load_from_dict(data, self, "rem_eth_addr")
 
-    def to_dict(self):
-        data = {}
-        if self.id is not None:
-            data["_id"] = self.id
-        pack_into_dict(data, self, "vm_id")
-        pack_into_dict(data, self, "ct_id")
-        pack_into_dict(data, self, "dp_id")
-        pack_into_dict(data, self, "dp_port")
-        pack_into_dict(data, self, "eth_addr")
-        pack_into_dict(data, self, "rem_ct")
-        pack_into_dict(data, self, "rem_id")
-        pack_into_dict(data, self, "rem_port")
-        pack_into_dict(data, self, "rem_eth_addr")
-        return data
-
-
-class RFISLConfEntry:
+class RFISLConfEntry(BaseEntry):
     def __init__(self, vm_id=None, ct_id=None, dp_id=None,  dp_port=None,
                  eth_addr=None, rem_ct=None, rem_id=None, rem_port=None,
                  rem_eth_addr=None):
@@ -413,35 +365,8 @@ class RFISLConfEntry:
     def get_status(self):
         return RFENTRY_ACTIVE
 
-    def from_dict(self, data):
-        self.id = data["_id"]
-        load_from_dict(data, self, "vm_id")
-        load_from_dict(data, self, "ct_id")
-        load_from_dict(data, self, "dp_id")
-        load_from_dict(data, self, "dp_port")
-        load_from_dict(data, self, "eth_addr")
-        load_from_dict(data, self, "rem_ct")
-        load_from_dict(data, self, "rem_id")
-        load_from_dict(data, self, "rem_port")
-        load_from_dict(data, self, "rem_eth_addr")
 
-    def to_dict(self):
-        data = {}
-        if self.id is not None:
-            data["_id"] = self.id
-        pack_into_dict(data, self, "vm_id")
-        pack_into_dict(data, self, "ct_id")
-        pack_into_dict(data, self, "dp_id")
-        pack_into_dict(data, self, "dp_port")
-        pack_into_dict(data, self, "eth_addr")
-        pack_into_dict(data, self, "rem_ct")
-        pack_into_dict(data, self, "rem_id")
-        pack_into_dict(data, self, "rem_port")
-        pack_into_dict(data, self, "rem_eth_addr")
-        return data
-
-
-class RFConfigEntry:
+class RFConfigEntry(BaseEntry):
     def __init__(self, vm_id=None, vm_port=None, ct_id=None, dp_id=None,
                  dp_port=None):
         self.id = None
@@ -458,21 +383,3 @@ class RFConfigEntry:
                               self.dp_id, self.dp_port,
                               self.ct_id)
 
-    def from_dict(self, data):
-        self.id = data["_id"]
-        load_from_dict(data, self, "vm_id")
-        load_from_dict(data, self, "vm_port")
-        load_from_dict(data, self, "ct_id")
-        load_from_dict(data, self, "dp_id")
-        load_from_dict(data, self, "dp_port")
-
-    def to_dict(self):
-        data = {}
-        if self.id is not None:
-            data["_id"] = self.id
-        pack_into_dict(data, self, "vm_id")
-        pack_into_dict(data, self, "vm_port")
-        pack_into_dict(data, self, "ct_id")
-        pack_into_dict(data, self, "dp_id")
-        pack_into_dict(data, self, "dp_port")
-        return data
