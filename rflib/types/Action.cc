@@ -66,6 +66,7 @@ size_t Action::type_to_length(uint8_t type) {
         case RFAT_DROP:
         case RFAT_SFLOW:
         case RFAT_STRIP_VLAN_DEFERRED:
+        case RFAT_STRIP_VLAN:
         default:
             return 0;
     }

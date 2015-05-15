@@ -15,6 +15,7 @@ enum ActionType {
     RFAT_SWAP_VLAN_ID = 9,  /* Swap VLAN ID */
     RFAT_GROUP = 10,         /* Output group */
     RFAT_GOTO = 11,          /* Goto table */
+    RFAT_STRIP_VLAN = 12,   /* Strip outermost VLAN (as an apply action) */
     RFAT_DROP = 254,        /* Drop packet (Unimplemented) */
     RFAT_SFLOW = 255,       /* Generate SFlow messages (Unimplemented) */
 };

@@ -14,6 +14,7 @@ RFAT_STRIP_VLAN_DEFERRED = 8 # Strip outermost VLAN (defer in write instructions
 RFAT_SWAP_VLAN_ID = 9   # Pop and swap a VLAN header
 RFAT_GROUP = 10         # Output group
 RFAT_GOTO = 11          # Goto table
+RFAT_STRIP_VLAN = 12    # Strip outermost VLAN (as an apply action)
 RFAT_DROP = 254         # Drop packet (Unimplemented)
 RFAT_SFLOW = 255        # Generate SFlow messages (Unimplemented)
 
@@ -29,6 +30,7 @@ typeStrings = {
             RFAT_SWAP_VLAN_ID : "RFAT_SWAP_VLAN_ID",
             RFAT_GROUP : "RFAT_GROUP",
             RFAT_GOTO : "RFAT_GOTO",
+            RFAT_STRIP_VLAN : "RFAT_STRIP_VLAN",
         }
 
 ACTION_BIN = (
@@ -106,6 +108,10 @@ class Action(TLV):
         return cls(RFAT_STRIP_VLAN_DEFERRED)
 
     @classmethod
+    def STRIP_VLAN(cls):
+        return cls(RFAT_STRIP_VLAN)
+
+    @classmethod
     def from_dict(cls, dic):
         ac = cls()
         ac._type = dic['type']
@@ -118,7 +124,7 @@ class Action(TLV):
             return int_to_bin(value, 32)
         elif actionType in (RFAT_SET_ETH_SRC, RFAT_SET_ETH_DST):
             return ether_to_bin(value)
-        elif actionType in (RFAT_POP_MPLS, RFAT_DROP, RFAT_SFLOW, RFAT_STRIP_VLAN_DEFERRED):
+        elif actionType in (RFAT_POP_MPLS, RFAT_DROP, RFAT_SFLOW, RFAT_STRIP_VLAN_DEFERRED, RFAT_STRIP_VLAN):
             return ''
         else:
             return None
@@ -135,7 +141,7 @@ class Action(TLV):
             return bin_to_int(self._value)
         elif self._type in (RFAT_SET_ETH_SRC, RFAT_SET_ETH_DST):
             return bin_to_ether(self._value)
-        elif self._type in (RFAT_POP_MPLS, RFAT_DROP, RFAT_SFLOW, RFAT_STRIP_VLAN_DEFERRED):
+        elif self._type in (RFAT_POP_MPLS, RFAT_DROP, RFAT_SFLOW, RFAT_STRIP_VLAN_DEFERRED, RFAT_STRIP_VLAN):
             return None
         else:
             return None
