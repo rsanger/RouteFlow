@@ -23,6 +23,7 @@ from rflib.types.Action import *
 from rflib.types.Option import *
 
 from rftable import *
+from rffastpath import *
 
 logging.basicConfig(
     level=logging.INFO,
@@ -34,7 +35,10 @@ logging.basicConfig(
 REGISTER_IDLE = 0
 REGISTER_ASSOCIATED = 1
 REGISTER_ISL = 2
+REGISTER_FP = 3
 
+#The table used to tag fastpath packets
+TABLE_FP = 1
 
 class RouteModTranslator(object):
 
@@ -42,11 +46,12 @@ class RouteModTranslator(object):
     CONTROLLER_PRIORITY = Option.PRIORITY(PRIORITY_HIGH)
     DEFAULT_PRIORITY = Option.PRIORITY(PRIORITY_LOWEST + PRIORITY_BAND + 1000)
 
-    def __init__(self, dp_id, ct_id, rftable, isltable, log):
+    def __init__(self, dp_id, ct_id, rftable, isltable, fpconf, log):
         self.dp_id = dp_id
         self.ct_id = ct_id
         self.rftable = rftable
         self.isltable = isltable
+        self.fpconf = fpconf
         self.log = log
 
     def configure_datapath(self):
@@ -82,7 +87,7 @@ class DefaultRouteModTranslator(RouteModTranslator):
         # delete all groups
         rm = RouteMod(RMT_DELETE_GROUP, self.dp_id)
         rms.append(rm)
-        
+
         # delete all flows
         rm = RouteMod(RMT_DELETE, self.dp_id)
         rms.append(rm)
@@ -96,14 +101,16 @@ class DefaultRouteModTranslator(RouteModTranslator):
         # ARP
         rm = RouteMod(RMT_ADD, self.dp_id)
         rm.add_match(Match.ETHERTYPE(ETHERTYPE_ARP))
-        rm.add_action(Action.CONTROLLER())
         rm.add_option(self.CONTROLLER_PRIORITY)
-        rms.append(rm)
+        rms.extend(self.handle_controller_route_mod(self, rm))
 
         return rms
 
     def handle_controller_route_mod(self, entry, rm):
-        rm.add_action(Action.CONTROLLER())
+        if self.fpconf.enabled:
+            rm.add_action(Action.GOTO(TABLE_FP))
+        else:
+            rm.add_action(Action.CONTROLLER())
         return [rm]
 
     def handle_route_mod(self, entry, rm):
@@ -479,9 +486,12 @@ class CorsaMultitableRouteModTranslator(RouteModTranslator):
 
 class RFServer(RFProtocolFactory, IPC.IPCMessageProcessor):
 
-    def __init__(self, configfile, islconffile, multitabledps, satellitedps):
+    def __init__(self, configfile, islconffile, multitabledps, satellitedps, fpconf):
         self.config = RFConfig(configfile)
         self.islconf = RFISLConf(islconffile)
+        self.fpconf = RFFPConf(fpconf)
+        self.labeller = MetaVLAN()
+
         try:
             self.multitabledps = set([int(x, 16) for x in multitabledps.split(",")])
         except ValueError:
@@ -507,6 +517,16 @@ class RFServer(RFProtocolFactory, IPC.IPCMessageProcessor):
             self.log.info("Datapaths that support multiple tables: %s",
                           list(self.multitabledps))
 
+        if self.fpconf:
+            self.log.info("List of fastpath attachments: %s", list(self.fpconf.get_entries_all()))
+
+        # If we have at least one fastpath link we are using fastpath
+        if len(self.fpconf.get_entries_all()) > 0:
+            self.fpconf.enabled = True
+        else:
+            self.fpconf.enabled = False
+        fp_allocate_labels(self.labeller, self.log, self.config, self.fpconf, self.islconf)
+
         self.ack_q = Queue.Queue()
         self.dp_q = Queue.Queue()
         self.ipc_lock = threading.Lock()
@@ -524,7 +544,7 @@ class RFServer(RFProtocolFactory, IPC.IPCMessageProcessor):
         self.ipc_lock.acquire()
         self.ipc.send(channel, channel_id, msg)
         self.ipc_lock.release()
-    
+
     def dp_worker(self):
         while True:
             (ct_id, rm) = self.dp_q.get(block=True)
@@ -595,7 +615,7 @@ class RFServer(RFProtocolFactory, IPC.IPCMessageProcessor):
                              format_id(entry.dp_id), entry.dp_port))
 
     def queue_routemod_ack(self, ct_id, vm_id, vm_port):
-        self.ack_q.put((str(vm_id), 
+        self.ack_q.put((str(vm_id),
                         PortConfig(vm_id=vm_id, vm_port=vm_port, operation_id=PCT_ROUTEMOD_ACK)))
 
     def send_route_mod(self, ct_id, rm):
@@ -626,7 +646,7 @@ class RFServer(RFProtocolFactory, IPC.IPCMessageProcessor):
         rm.set_id(int(entry.dp_id))
 
         rms = []
-        
+
         if rm.get_mod() is RMT_CONTROLLER:
             rms.extend(translator.handle_controller_route_mod(entry, rm))
 
@@ -661,8 +681,11 @@ class RFServer(RFProtocolFactory, IPC.IPCMessageProcessor):
                                                           dp_port)
         if config_entry is None:
             islconfs = self.islconf.get_entries_by_port(ct_id, dp_id, dp_port)
+            fpconfs = self.fpconf.get_entries_for_port(ct_id, dp_id, dp_port)
             if islconfs:
                 action = REGISTER_ISL
+            elif fpconfs:
+                action = REGISTER_FP
             else:
                 # Register idle DP awaiting for configuration
                 action = REGISTER_IDLE
@@ -693,8 +716,106 @@ class RFServer(RFProtocolFactory, IPC.IPCMessageProcessor):
         elif action == REGISTER_ISL:
             self._register_islconf(islconfs, ct_id, dp_id, dp_port)
 
+        elif action == REGISTER_FP:
+            self._register_fpconf(fpconfs, ct_id, dp_id, dp_port)
+
+    def _register_fpports(self, fp_port, ports, ct_id, dp_id):
+        """Adds a rule for each port to send controller traffic to the next fastpath
+        or isl link"""
+        for port in ports:
+
+            if not hasattr(port, 'fp_label'):
+                self.log.error("dp %d port %d has no fastpath label" %
+                               (dp_id, port.dp_port))
+                continue
+
+            self.log.info("dp %d port %d registering fastpath %s" %
+                          (dp_id, port.dp_port, port.fp_label))
+
+            # Add rule to tag for every incoming packet based on inport
+            # in our tagging table
+            rm = RouteMod(RMT_ADD, dp_id)
+            rm.add_match(Match.IN_PORT(port.dp_port))
+            self.labeller.rfaction_push_meta(port.fp_label, rm)
+            rm.add_action(Action.OUTPUT(fp_port))
+            rm.add_option(Option.PRIORITY(PRIORITY_HIGH))
+            rm.set_table(TABLE_FP)
+            self.send_route_mod(ct_id, rm)
+
+            # For each incomming fp packet set the correct output port
+            rm = RouteMod(RMT_ADD, dp_id)
+            rm.add_match(Match.IN_PORT(fp_port))
+            self.labeller.rfmatch_meta(port.fp_label, rm)
+            self.labeller.rfaction_pop_meta(rm)
+            rm.add_action(Action.OUTPUT(port.dp_port))
+            rm.add_option(Option.PRIORITY(PRIORITY_HIGHEST))
+            self.send_route_mod(ct_id, rm)
+
+    def _register_fpconf(self, fpentries, ct_id, dp_id, dp_port):
+        """Registers a fastpath link by creating rules for every directly
+        connected port"""
+        if len(fpentries) is not 1:
+            self.log.warning("Found %d FP entries for a single switch, we'll only use one", len(fpentries))
+        # Our configuration would have set one to be used
+        for fp in fpentries:
+            if fp.fp_master:
+                ports = self.config.get_config_for_dp(ct_id, dp_id)
+                self._register_fpports(dp_port, ports, ct_id, dp_id)
+                break
+
+    def _register_fpisl(self, isl, ct_id, dp_id, dp_port):
+        """Registers an isl by putting rules into the parent switch to carry all
+        fastpaths associated with this link"""
+        # Configure the switch to carry the childrens traffic
+        my_master = None
+        for l in self.islconf.get_entries_by_dpid(ct_id, dp_id):
+            if hasattr(l, "fp_master") and l.fp_master != dp_id and l.fp_master != None:
+                my_master = l
+                break
+        else:
+            # Maybe we connect directly to a fastpath
+            for l in self.fpconf.get_entries_for_dpid(ct_id, dp_id):
+                # What if we really do have multiple links ??
+                my_master = l
+                break
+        if my_master == None:
+            self.log.error("No FP master found for dp %d", dp_id)
+            return
+
+        if dp_id == my_master.dp_id:
+            out_port = my_master.dp_port
+        else:
+            out_port = my_master.dp_port
+
+        for label, _ in isl.fast_paths:
+            # Add rule to forward match packets towards the controller
+            rm = RouteMod(RMT_ADD, dp_id)
+            rm.add_match(Match.IN_PORT(dp_port))
+            self.labeller.rfmatch_meta(label, rm)
+            rm.add_action(Action.OUTPUT(out_port))
+            rm.add_option(Option.PRIORITY(PRIORITY_HIGHEST))
+            self.send_route_mod(ct_id, rm)
+
+            # Add rule to forward towards ports
+            rm = RouteMod(RMT_ADD, dp_id)
+            rm.add_match(Match.IN_PORT(out_port))
+            self.labeller.rfmatch_meta(label, rm)
+            rm.add_action(Action.OUTPUT(dp_port))
+            rm.add_option(Option.PRIORITY(PRIORITY_HIGHEST))
+            self.send_route_mod(ct_id, rm)
+
     def _register_islconf(self, c_entries, ct_id, dp_id, dp_port):
         for conf in c_entries:
+
+            if hasattr(conf, "fp_master"):
+                if c_entries[0].fp_master == dp_id:
+                    # We are the master, add rules to pass through fastpath traffic
+                    self._register_fpisl(c_entries[0], ct_id, dp_id, dp_port)
+                elif c_entries[0].fp_master != None:
+                    # We are a child, add rules for each of our ports
+                    ports = self.config.get_config_for_dp(ct_id, dp_id)
+                    self._register_fpports(dp_port, ports, ct_id, dp_id)
+
             entry = None
             eth_addr = None
             if conf.rem_id != dp_id or conf.rem_ct != ct_id:
@@ -748,7 +869,7 @@ class RFServer(RFProtocolFactory, IPC.IPCMessageProcessor):
     def send_datapath_config_messages(self, ct_id, dp_id):
         rms = self.route_mod_translator[dp_id].configure_datapath()
         for rm in rms:
-            self.send_route_mod(ct_id, rm) 
+            self.send_route_mod(ct_id, rm)
 
     def config_dp(self, ct_id, dp_id):
         if is_rfvs(dp_id):
@@ -760,14 +881,14 @@ class RFServer(RFProtocolFactory, IPC.IPCMessageProcessor):
                     self.log.info("Configuring datapath (dp_id=%s)" % format_id(dp_id))
                     if dp_id in self.multitabledps:
                         self.route_mod_translator[dp_id] = NoviFlowMultitableRouteModTranslator(
-                            dp_id, ct_id, self.rftable, self.isltable, self.log)
+                            dp_id, ct_id, self.rftable, self.isltable, self.fpconf, self.log)
                     elif dp_id in self.satellitedps:
                         self.route_mod_translator[dp_id] = SatelliteRouteModTranslator(
-                            dp_id, ct_id, self.rftable, self.isltable, self.log)
+                            dp_id, ct_id, self.rftable, self.isltable, self.fpconf, self.log)
                     else:
                         self.route_mod_translator[dp_id] = DefaultRouteModTranslator(
-                            dp_id, ct_id, self.rftable, self.isltable, self.log)
-                    self.send_datapath_config_messages(ct_id, dp_id) 
+                            dp_id, ct_id, self.rftable, self.isltable, self.fpconf, self.log)
+                    self.send_datapath_config_messages(ct_id, dp_id)
             return False
     # DatapathDown methods
     def set_dp_down(self, ct_id, dp_id):
@@ -842,6 +963,8 @@ if __name__ == "__main__":
                         help='List of datapaths that support multiple tables')
     parser.add_argument('-s', '--satellitedps', default='',
                         help='List of datapaths that default forward to ISL peer')
+    parser.add_argument('-f', '--fastpaths', default='',
+                        help='List of "fastpath" link(s) to the controller')
 
     args = parser.parse_args()
-    server = RFServer(args.configfile, args.islconfig, args.multitabledps, args.satellitedps)
+    server = RFServer(args.configfile, args.islconfig, args.multitabledps, args.satellitedps, args.fastpaths)

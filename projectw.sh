@@ -17,8 +17,11 @@ HOME=/home/projectw
 RF_HOME=$HOME/RouteFlow
 RFSERVERCONFIG=/tmp/rfserverconfig.csv
 RFSERVERINTERNAL=/tmp/rfserverinternal.csv
+RFFASTPATH=/tmp/rffastpath.csv
+DP0LINKS="$HOME/rfdp0links.csv"
 HOME_RFSERVERCONFIG="$HOME/"`basename $RFSERVERCONFIG`
 HOME_RFSERVERINTERNAL="$HOME/"`basename $RFSERVERINTERNAL`
+HOME_RFFASTPATH="$HOME/"`basename $RFFASTPATH`
 CONTROLLER_PORT=6653
 LXCDIR=/var/lib/lxc
 RFVM1=$LXCDIR/rfvm1
@@ -150,6 +153,8 @@ default_config() {
     for i in `seq 1 $DPPORTS` ; do
       echo 0x12a0a0a0a0a0,$i,0,$SWITCH1DPID,$i >> $RFSERVERCONFIG
     done
+    cp /dev/null $RFFASTPATH
+    echo "ct_id,dp_id,dp_port,dp0_port" > $RFFASTPATH
 
     # Configure the VM
     cat > $RFVM1/config <<EOF
@@ -279,6 +284,7 @@ reset() {
     rm -rf $RFVM1/rootfs/opt/rfclient;
     rm -rf $RFSERVERCONFIG
     rm -rf $RFSERVERINTERNAL
+    rm -rf $RFFASTPATH
 }
 reset 1
 trap "reset 0; exit 0" INT
@@ -288,6 +294,7 @@ if [ "$ACTION" != "RESET" ]; then
         echo_bold "-> Using existing external config..."
         cp $HOME_RFSERVERCONFIG $RFSERVERCONFIG
         cp $HOME_RFSERVERINTERNAL $RFSERVERINTERNAL
+        cp $HOME_RFFASTPATH $RFFASTPATH
     else
         echo_bold "-> Using default config..."
         default_config
@@ -298,7 +305,7 @@ if [ "$ACTION" != "RESET" ]; then
     ifconfig $RFBR $HOSTVMIP
 
     echo_bold "-> Starting RFServer..."
-    nice ./rfserver/rfserver.py $RFSERVERCONFIG -i $RFSERVERINTERNAL -m $MULTITABLEDPS -s $SATELLITEDPS &
+    nice ./rfserver/rfserver.py $RFSERVERCONFIG -i $RFSERVERINTERNAL -m $MULTITABLEDPS -s $SATELLITEDPS -f $RFFASTPATH &
 
     echo_bold "-> Starting the controller ($ACTION) and RFPRoxy..."
     case "$ACTION" in
@@ -332,13 +339,34 @@ if [ "$ACTION" != "RESET" ]; then
       echo -n .
       sleep 1
     done
-    
+
     $VSCTL add-port $RFBR rfvm1.0
     for i in `netstat -i|grep rfvm1|cut -f 1 -d " "` ; do
       if [ "$i" != "rfvm1.0" ] ; then
         $VSCTL add-port $RFDP $i
       fi
     done
+
+    # Add any fastpath links to dp0 and verify that the get the port number we expect
+    tail -n +2 $DP0LINKS | while IFS=, read interface dp0_port
+    do
+        # Match the fastpath connection to the directly connected ports upon that switch
+        # Add the interface
+        $VSCTL add-port $RFDP $interface
+        # Verify that it got the correct port number
+        new_port=`$OFCTL dump-ports-desc $RFDP | grep $interface | cut -d '(' -f 1 | xargs`
+        if [ "$new_port" != "$dp0_port" ]; then
+            echo_bold "!!!! WARNING PORT MAPPED INCORRECTLY $interface expected to be =$dp0_port but instead is =$new_port !!!!"
+        else
+            echo_bold "Successfully added $interface as port $new_port"
+        fi
+    done
+
+    echo_bold "-> Setting up $RFDP"
+    # Run the fastpath code to create rules on dp0
+    echo -e "\033[1m"
+    ./rfserver/rffastpath.py $RFSERVERCONFIG -i $RFSERVERINTERNAL -m $MULTITABLEDPS -s $SATELLITEDPS -f $RFFASTPATH -v "$OFCTL" -d $RFDP
+    echo -e "\033[0m"
 
     echo_bold "-> Waiting for rfvm1 to come up..."
     while ! ping -W 1 -c 1 $RFVM1IP ; do

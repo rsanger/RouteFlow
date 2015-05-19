@@ -14,6 +14,7 @@ RFTABLE_NAME = "rftable"
 RFCONFIG_NAME = "rfconfig"
 RFISL_NAME = "rfisl"
 RFISLCONF_NAME = "rfislconf"
+RFFPCONF_NAME = "rffpconf"
 
 RFSERVER_ID = "rfserver"
 RFPROXY_ID = "rfproxy"

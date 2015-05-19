@@ -17,6 +17,7 @@ RFENTRY = 0
 RFCONFIGENTRY = 1
 RFISLCONFENTRY = 2
 RFISLENTRY = 3
+RFFPCONFENTRY = 4
 
 class EntryFactory:
     @staticmethod
@@ -29,6 +30,8 @@ class EntryFactory:
             return RFISLEntry()
         elif type_ == RFISLCONFENTRY:
             return RFISLConfEntry()
+        elif type_ == RFFPCONFENTRY:
+            return RFFPConfEntry()
 
 class EntryTable(TableBase):
     def __init__(self, name, entry_type):
@@ -116,6 +119,13 @@ class RFConfig(EntryTable):
             return None
         return result[0]
 
+    def get_config_for_dp(self, ct_id, dp_id):
+        result = self.get_entries(ct_id=ct_id,
+                                  dp_id=dp_id)
+        if not result:
+            return None
+        return result
+
 class RFISLTable(EntryTable):
     def __init__(self):
         EntryTable.__init__(self, RFISL_NAME, RFISLENTRY)
@@ -161,6 +171,38 @@ class RFISLConf(EntryTable):
     def get_entries_by_port(self, ct, id_, port):
         results = self.get_entries(ct_id=ct, dp_id=id_, dp_port=port)
         results.extend(self.get_entries(rem_ct=ct, rem_id=id_, rem_port=port))
+        return results
+
+    def get_entries_by_dpid(self, ct, id_):
+        results = self.get_entries(ct_id=ct, dp_id=id_)
+        results.extend(self.get_entries(rem_ct=ct, rem_id=id_))
+        return results
+
+class RFFPConf(EntryTable):
+    def __init__(self, ifile):
+        EntryTable.__init__(self, RFFPCONF_NAME, RFFPCONFENTRY)
+        # TODO: perform validation of config
+        try:
+            internalfile = file(ifile)
+        except:
+            # Default to no ISL config
+            return
+        lines = internalfile.readlines()[1:]
+        entries = [line.strip("\n").split(",") for line in lines]
+        for (a, b, c, d) in entries:
+            self.set_entry(RFFPConfEntry(ct_id=int(a),
+                                          dp_id=int(b, 16), dp_port=int(c),
+                                          dp0_port=int(d)))
+    def get_entries_all(self):
+        results = self.get_entries()
+        return results
+
+    def get_entries_for_dpid(self, ct, dp_id):
+        results = self.get_entries(ct_id=ct, dp_id=dp_id)
+        return results
+
+    def get_entries_for_port(self, ct, dp_id, dp_port):
+        results = self.get_entries(ct_id=ct, dp_id=dp_id, dp_port=dp_port)
         return results
 
 class BaseEntry:
@@ -365,6 +407,23 @@ class RFISLConfEntry(BaseEntry):
     def get_status(self):
         return RFENTRY_ACTIVE
 
+class RFFPConfEntry(BaseEntry):
+    def __init__(self, ct_id=None, dp_id=None,  dp_port=None,
+                 dp0_port=None):
+        self.id = None
+        self.ct_id = ct_id
+        self.dp_id = dp_id
+        self.dp_port = dp_port
+        self.dp0_port = dp0_port
+        self.fast_paths = []
+
+    def __str__(self):
+        return "ct_id: %s dp_id: %s dp_port: %s dp0_port: %s"\
+               % (self.ct_id,
+                  self.dp_id, self.dp_port, self.dp0_port)
+
+    def get_status(self):
+        return RFENTRY_ACTIVE
 
 class RFConfigEntry(BaseEntry):
     def __init__(self, vm_id=None, vm_port=None, ct_id=None, dp_id=None,
