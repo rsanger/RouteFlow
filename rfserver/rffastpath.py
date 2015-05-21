@@ -75,7 +75,7 @@ class MetaLabel:
         return -1
 
 class MetaVLAN(MetaLabel):
-    label = 1
+    label = 2
 
     def ovsaction_push_meta(self, label, action=None):
          if action == None:
