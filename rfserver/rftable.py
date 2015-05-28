@@ -185,7 +185,7 @@ class RFFPConf(EntryTable):
         try:
             internalfile = file(ifile)
         except:
-            # Default to no ISL config
+            # Default to no FP config
             return
         lines = internalfile.readlines()[1:]
         entries = [line.strip("\n").split(",") for line in lines]
