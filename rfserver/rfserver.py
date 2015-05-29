@@ -137,7 +137,7 @@ class RouteModTranslator(object):
                 self.labeller.rfaction_push_meta(port.fp_label, rm)
                 rm.add_action(Action.OUTPUT(fp_port))
                 rm.add_option(self.CONTROLLER_PRIORITY)
-                rm.set_table(TABLE_FP)
+                rm.set_table(self.TABLE_FP)
                 rms.append(rm)
 
             # For each incomming fp packet set the correct output port
@@ -220,7 +220,7 @@ class DefaultRouteModTranslator(RouteModTranslator):
 
     def handle_controller_route_mod(self, entry, rm):
         if self.fpconf.enabled and not self.fpconf.notables:
-            rm.add_action(Action.GOTO(TABLE_FP))
+            rm.add_action(Action.GOTO(self.TABLE_FP))
         elif self.fpconf.enabled:
             rms = []
             master_port = self._get_fastpath_port()
