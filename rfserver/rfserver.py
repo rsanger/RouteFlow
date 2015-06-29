@@ -419,6 +419,19 @@ class NoviFlowMultitableRouteModTranslator(RouteModTranslator):
         rm.add_action(Action.OUTPUT(r.dp_port))
         entries = self.rftable.get_entries(dp_id=r.dp_id, ct_id=r.ct_id)
         rms.extend(self._send_rm_with_matches(rm, r.dp_port, entries))
+
+        # Add entry to table 0 to match the ISL MAC and passes the packet to FIB table
+        rm = copy.deepcopy(rm)
+        rm.set_table(0)
+        rm.set_actions(None)
+        rm.add_action(Action.GOTO(self.FIB_TABLE))
+        rm.set_matches(None)
+        if self.dp_id == r.dp_id:
+            rm.add_match(Match.ETHERNET(r.eth_addr))
+        else:
+            rm.add_match(Match.ETHERNET(r.rem_eth_addr))
+        rms.append(rm)
+
         return rms
 
 class CorsaMultitableRouteModTranslator(RouteModTranslator):
