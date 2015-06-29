@@ -98,11 +98,19 @@ class RFConfig(EntryTable):
         # TODO: perform validation of config
         configfile = file(ifile)
         lines = configfile.readlines()[1:]
-        entries = [line.strip("\n").split(",") for line in lines]
-        for (a, b, c, d, e) in entries:
-            self.set_entry(RFConfigEntry(vm_id=int(a, 16), vm_port=int(b),
-                                         ct_id=int(c), dp_id=int(d, 16),
-                                         dp_port=int(e)))
+        entries = [line.strip("\n").partition("#")[0].split(",") for line in lines]
+        for conf in entries:
+            if not conf or (len(conf) == 1 and not conf[0].strip()):
+                continue
+            try:
+                (a, b, c, d, e) = conf
+                self.set_entry(RFConfigEntry(vm_id=int(a, 16), vm_port=int(b),
+                                             ct_id=int(c), dp_id=int(d, 16),
+                                             dp_port=int(e)))
+
+            except:
+                raise SyntaxError("Invalid configuration line " + str(conf) + " expected format " +
+                                  "vm_id,vm_port,ct_id,dp_id,dp_port")
 
     def get_config_for_vm_port(self, vm_id, vm_port):
         result = self.get_entries(vm_id=vm_id,
@@ -160,13 +168,20 @@ class RFISLConf(EntryTable):
             # Default to no ISL config
             return
         lines = internalfile.readlines()[1:]
-        entries = [line.strip("\n").split(",") for line in lines]
-        for (a, b, c, d, e, f, g, h, i) in entries:
-            self.set_entry(RFISLConfEntry(vm_id=int(a, 16), ct_id=int(b),
-                                          dp_id=int(c, 16), dp_port=int(d),
-                                          eth_addr=e, rem_ct=int(f),
-                                          rem_id=int(g, 16), rem_port=int(h),
-                                          rem_eth_addr=i))
+        entries = [line.strip("\n").partition("#")[0].split(",") for line in lines]
+        for conf in entries:
+            if not conf or (len(conf) == 1 and not conf[0].strip()):
+                continue
+            try:
+                (a, b, c, d, e, f, g, h, i) = conf
+                self.set_entry(RFISLConfEntry(vm_id=int(a, 16), ct_id=int(b),
+                                              dp_id=int(c, 16), dp_port=int(d),
+                                              eth_addr=e, rem_ct=int(f),
+                                              rem_id=int(g, 16), rem_port=int(h),
+                                              rem_eth_addr=i))
+            except:
+                raise SyntaxError("Invalid isl configuration line " + str(conf) + " expected format " +
+                                  "vm_id,ct_id,dp_id,dp_port,eth_addr,rem_ct,rem_id,rem_port,rem_eth_addr")
 
     def get_entries_by_port(self, ct, id_, port):
         results = self.get_entries(ct_id=ct, dp_id=id_, dp_port=port)
@@ -188,11 +203,19 @@ class RFFPConf(EntryTable):
             # Default to no FP config
             return
         lines = internalfile.readlines()[1:]
-        entries = [line.strip("\n").split(",") for line in lines]
-        for (a, b, c, d) in entries:
-            self.set_entry(RFFPConfEntry(ct_id=int(a),
-                                          dp_id=int(b, 16), dp_port=int(c),
-                                          dp0_port=int(d)))
+        entries = [line.strip("\n").partition("#")[0].split(",") for line in lines]
+        for conf in entries:
+            if not conf or (len(conf) == 1 and not conf[0].strip()):
+                continue
+            try:
+                (a, b, c, d) = conf
+                self.set_entry(RFFPConfEntry(ct_id=int(a),
+                                              dp_id=int(b, 16), dp_port=int(c),
+                                              dp0_port=int(d)))
+            except:
+                raise SyntaxError("Invalid fastpath configuration line " + str(conf) + " expected format " +
+                                  "ct_id,dp_id,dp_port,dp0_port")
+
     def get_entries_all(self):
         results = self.get_entries()
         return results
