@@ -92,7 +92,7 @@ class RouteModTranslator(object):
             master_port = master.rem_port
         return master_port
 
-    def _register_fastpaths(self):
+    def _register_fastpaths(self, usetables):
         """Adds rules for all fastpaths that traverse or are created by this forwarding element"""
         rms = []
         # Treat fastpaths and isls the same
@@ -103,7 +103,7 @@ class RouteModTranslator(object):
 
         # Add entries for all directly attached ports
         ports = self.conf.get_config_for_dp(self.ct_id, self.dp_id)
-        rms += self._register_fpports(master_port, ports)
+        rms += self._register_fpports(master_port, ports, usetables)
 
         # Add entries for all fastpaths that we carry
         for fp in fpentries:
@@ -116,7 +116,7 @@ class RouteModTranslator(object):
 
         return rms
 
-    def _register_fpports(self, fp_port, ports):
+    def _register_fpports(self, fp_port, ports, usetables):
         """Adds a rule for each local port to send controller traffic to the next fastpath
         or isl link"""
         rms = []
@@ -132,7 +132,7 @@ class RouteModTranslator(object):
 
             # Add rule to tag for every incoming packet based on inport
             # in our tagging table
-            if not self.fpconf.notables:
+            if usetables:
                 rm = RouteMod(RMT_ADD, self.dp_id)
                 rm.add_match(Match.IN_PORT(port.dp_port))
                 self.labeller.rfaction_push_meta(port.fp_label, rm)
@@ -227,14 +227,12 @@ class DefaultRouteModTranslator(RouteModTranslator):
 
         # Register fastpath rules
         if self.fpconf.enabled:
-            rms += self._register_fastpaths()
+            rms += self._register_fastpaths(False)
 
         return rms
 
     def handle_controller_route_mod(self, entry, rm):
-        if self.fpconf.enabled and not self.fpconf.notables:
-            rm.add_action(Action.GOTO(self.FP_TABLE))
-        elif self.fpconf.enabled:
+        if self.fpconf.enabled:
             rms = []
             master_port = self._get_fastpath_port()
 
@@ -313,7 +311,7 @@ class SatelliteRouteModTranslator(DefaultRouteModTranslator):
 
 
 class NoviFlowMultitableRouteModTranslator(RouteModTranslator):
-
+    FP_TABLE = 3
     FIB_TABLE = 2
     ETHER_TABLE = 1
 
@@ -376,9 +374,8 @@ class NoviFlowMultitableRouteModTranslator(RouteModTranslator):
         rm = RouteMod(RMT_ADD, self.dp_id)
         rm.set_table(self.ETHER_TABLE)
         rm.add_match(Match.ETHERTYPE(ETHERTYPE_ARP))
-        rm.add_action(Action.GROUP(CONTROLLER_GROUP))
         rm.add_option(self.CONTROLLER_PRIORITY)
-        rms.append(rm)
+        rms.extend(self.handle_controller_route_mod(self, rm))
         # IPv4
         rm = RouteMod(RMT_ADD, self.dp_id)
         rm.set_table(self.ETHER_TABLE)
@@ -386,11 +383,19 @@ class NoviFlowMultitableRouteModTranslator(RouteModTranslator):
         rm.add_option(self.DEFAULT_PRIORITY)
         rm.add_action(Action.GOTO(self.FIB_TABLE))
         rms.append(rm)
+
+        # Register fastpath rules
+        if self.fpconf.enabled:
+            rms += self._register_fastpaths(True)
+
         return rms
 
     def handle_controller_route_mod(self, entry, rm):
         rms = []
-        rm.add_action(Action.GROUP(CONTROLLER_GROUP))
+        if not self.fpconf.enabled:
+            rm.add_action(Action.GROUP(CONTROLLER_GROUP))
+        else:
+            rm.add_action(Action.GOTO(self.FP_TABLE))
         # should be FIB_TABLE, but see NoviFlow note.
         rm.set_table(self.ETHER_TABLE)
         dl_dst = None
@@ -659,7 +664,7 @@ class CorsaMultitableRouteModTranslator(RouteModTranslator):
 
 class RFServer(RFProtocolFactory, IPC.IPCMessageProcessor):
 
-    def __init__(self, configfile, islconffile, multitabledps, satellitedps, fpconf, notables):
+    def __init__(self, configfile, islconffile, multitabledps, satellitedps, fpconf):
         self.config = RFConfig(configfile)
         self.islconf = RFISLConf(islconffile)
         self.fpconf = RFFPConf(fpconf)
@@ -698,10 +703,11 @@ class RFServer(RFProtocolFactory, IPC.IPCMessageProcessor):
             self.fpconf.enabled = True
         else:
             self.fpconf.enabled = False
-        self.fpconf.notables = notables
 
-        self.log.info("Fastpath is %s - %s" % ("enabled" if self.fpconf.enabled else "disabled",
-                      "notables" if self.fpconf.notables else "multi-tables"))
+        if self.fpconf.enabled:
+            self.log.info("Fastpath is enabled")
+        else:
+            self.log.info("Fastpath is disabled")
         fp_allocate_labels(self.labeller, self.log, self.config, self.fpconf, self.islconf)
 
         self.ack_q = Queue.Queue()
@@ -1044,8 +1050,6 @@ if __name__ == "__main__":
                         help='List of datapaths that default forward to ISL peer')
     parser.add_argument('-f', '--fastpaths', default='',
                         help='List of "fastpath" link(s) to the controller')
-    parser.add_argument('--notables', default=False, type=bool,
-                        help='Make fastpaths use only a single table(for single table devices), this will result in more rules')
 
     args = parser.parse_args()
-    server = RFServer(args.configfile, args.islconfig, args.multitabledps, args.satellitedps, args.fastpaths, args.notables)
+    server = RFServer(args.configfile, args.islconfig, args.multitabledps, args.satellitedps, args.fastpaths)
