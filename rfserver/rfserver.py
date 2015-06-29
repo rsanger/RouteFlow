@@ -39,8 +39,9 @@ REGISTER_ISL = 2
 class RouteModTranslator(object):
 
     DROP_PRIORITY = Option.PRIORITY(PRIORITY_LOWEST + PRIORITY_BAND)
+    ESTABLISH_PRIORITY = Option.PRIORITY(PRIORITY_LOWEST + PRIORITY_BAND + 1)
     CONTROLLER_PRIORITY = Option.PRIORITY(PRIORITY_HIGH)
-    FASTPATH_PRIORITY = Option.PRIORITY(PRIORITY_HIGHEST)
+    FASTPATH_PRIORITY = Option.PRIORITY(PRIORITY_HIGH + 1)
     DEFAULT_PRIORITY = Option.PRIORITY(PRIORITY_LOWEST + PRIORITY_BAND + 1000)
 
     #The table used to tag fastpath packets
@@ -200,6 +201,18 @@ class DefaultRouteModTranslator(RouteModTranslator):
         rm = RouteMod(RMT_DELETE, self.dp_id)
         rms.append(rm)
 
+        # catch ipv4 and ipv6 and send to the controller so we can
+        # do arp and install a rule for the flow
+        rm = RouteMod(RMT_ADD, self.dp_id)
+        rm.add_option(self.ESTABLISH_PRIORITY)
+        rm.add_match(Match.ETHERTYPE(ETHERTYPE_IP))
+        rms.extend(self.handle_controller_route_mod(self,rm))
+
+        rm = RouteMod(RMT_ADD, self.dp_id)
+        rm.add_option(self.ESTABLISH_PRIORITY)
+        rm.add_match(Match.ETHERTYPE(ETHERTYPE_IPV6))
+        rms.extend(self.handle_controller_route_mod(self,rm))
+
         # default drop
         rm = RouteMod(RMT_ADD, self.dp_id)
         #rm.add_match(Match.ETHERTYPE(ETHERTYPE_IP))
@@ -333,6 +346,20 @@ class NoviFlowMultitableRouteModTranslator(RouteModTranslator):
         # delete all flows
         rm = RouteMod(RMT_DELETE, self.dp_id)
         rms.append(rm)
+
+        # catch ipv4 and ipv6 and send to the controller so we can
+        # do arp and install a rule for the flow
+        rm = RouteMod(RMT_ADD, self.dp_id)
+        rm.add_option(self.ESTABLISH_PRIORITY)
+        rm.add_match(Match.ETHERTYPE(ETHERTYPE_IP))
+        # Noviflow sets all controller actions on the ether table for performance reasons but this
+        # will not work there. TODO test this on hardware and see if its a problem.
+        rms.extend([(x.set_table(self.FIB_TABLE), x)[1] for x in self.handle_controller_route_mod(self,rm)])
+
+        rm = RouteMod(RMT_ADD, self.dp_id)
+        rm.add_option(self.ESTABLISH_PRIORITY)
+        rm.add_match(Match.ETHERTYPE(ETHERTYPE_IPV6))
+        rms.extend([(x.set_table(self.FIB_TABLE), x)[1] for x in self.handle_controller_route_mod(self,rm)])
 
         # default drop
         for table_id in (0, self.ETHER_TABLE, self.FIB_TABLE):
