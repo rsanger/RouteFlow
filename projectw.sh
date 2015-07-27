@@ -1,39 +1,7 @@
 #!/bin/bash
 
-# Set to 0 to use external switch(es)
-STARTBVMS=1
+source ./projectw.cfg
 
-# If rfserverconfig.csv and rfserverinternal.csv exist in /home/projectw,
-# use them and don't try to configure rfvm1. If they do not exist, use values
-# below for default config.
-DPPORTNET=172.31
-DPPORTNETV6=fc00::
-DPPORTS=2
-SWITCH1DPID=0x99
-MULTITABLEDPS="''"
-SATELLITEDPS="''"
-
-HOME=/home/projectw
-RF_HOME=$HOME/RouteFlow
-RFSERVERCONFIG=/tmp/rfserverconfig.csv
-RFSERVERINTERNAL=/tmp/rfserverinternal.csv
-RFFASTPATH=/tmp/rffastpath.csv
-DP0LINKS="$HOME/rfdp0links.csv"
-HOME_RFSERVERCONFIG="$HOME/"`basename $RFSERVERCONFIG`
-HOME_RFSERVERINTERNAL="$HOME/"`basename $RFSERVERINTERNAL`
-HOME_RFFASTPATH="$HOME/"`basename $RFFASTPATH`
-CONTROLLER_PORT=6653
-LXCDIR=/var/lib/lxc
-RFVM1=$LXCDIR/rfvm1
-RFBR=br0
-RFDP=dp0
-RFDPID=7266767372667673
-OFP=OpenFlow13
-RFVM1IP=192.168.10.100
-HOSTVMIP=192.168.10.1
-OVSSOCK=/tmp/openvswitch-db.sock
-VSCTL="ovs-vsctl --db=unix:$OVSSOCK"
-OFCTL="ovs-ofctl -O$OFP"
 export PATH=$PATH:/usr/local/bin:/usr/local/sbin
 export PYTHONPATH=$PYTHONPATH:$RF_HOME
 
