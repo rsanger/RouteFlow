@@ -291,7 +291,7 @@ if [ "$ACTION" != "RESET" ]; then
     $VSCTL set bridge $RFDP other-config:datapath-id=$RFDPID
     $VSCTL set bridge $RFDP protocols=$OFP
     $VSCTL set-controller $RFDP tcp:127.0.0.1:$CONTROLLER_PORT
-    $OFCTL add-flow $RFDP actions=CONTROLLER:65509
+    $OFCTL add-flow $RFDP priority=0,actions=CONTROLLER:65509
     ifconfig $RFDP up
     check_local_br_up $RFDP
 
