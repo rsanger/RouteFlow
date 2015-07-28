@@ -161,7 +161,10 @@ def shortest_recursive(labeller, log, check_set, conf, fpconf, islconf):
             my_dpid = link.dp_id
         # Allocate label for all directly attached ports as these will use
         # link to do fast path (assuming someone didn't beat us to it)
-        for port in conf.get_config_for_dp(ct_id, my_dpid):
+        ports = conf.get_config_for_dp(ct_id, my_dpid)
+        if ports == None:
+            ports = []
+        for port in ports:
             if not hasattr(port, "fp_label"):
                 port.fp_label = labeller.allocate_label()
                 conf.set_entry(port)

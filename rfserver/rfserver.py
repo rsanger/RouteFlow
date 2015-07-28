@@ -120,6 +120,8 @@ class RouteModTranslator(object):
         """Adds a rule for each local port to send controller traffic to the next fastpath
         or isl link"""
         rms = []
+        if ports == None:
+            ports = []
         for port in ports:
 
             if not hasattr(port, 'fp_label'):
@@ -246,6 +248,8 @@ class DefaultRouteModTranslator(RouteModTranslator):
 
             # Install for all ports
             ports = self.conf.get_config_for_dp(self.ct_id, self.dp_id)
+            if ports == None:
+                ports = []
             for port in ports:
                 new_rm = copy.deepcopy(rm)
                 new_rm.add_match(Match.IN_PORT(port.dp_port))
