@@ -253,6 +253,9 @@ reset() {
     rm -rf $RFSERVERCONFIG
     rm -rf $RFSERVERINTERNAL
     rm -rf $RFFASTPATH
+    if [ -n "$ICC_INT" ]; then
+        ip link del $ICC_INT
+    fi
 }
 reset 1
 trap "reset 0; exit 0" INT
@@ -335,6 +338,29 @@ if [ "$ACTION" != "RESET" ]; then
             echo_bold "Successfully added $interface as port $new_port"
         fi
     done
+
+    # Setup inband control channel
+    if [ -n "$ICC_INT" ]; then
+        ip link add $ICC_INT type veth peer name ${ICC_INT}ovs
+        ip addr add $ICC_NETWORK dev $ICC_INT
+        # Add one end to OVS
+        $VSCTL add-port $RFDP ${ICC_INT}ovs -- set Interface ${ICC_INT}ovs ofport_request=$ICC_REQUEST_PORT
+        icc_port=$(get_dp0_port $ICC_INT)
+        icc_fp_port=$(get_dp0_port $ICC_FASTPATH_INT)
+        if ! test "$icc_port" -ge 0 2>/dev/null ; then
+            echo_bold "Error: Failed to map icc_port"
+            kill -INT $$
+        fi
+        if ! test "$icc_fp_port" -ge 0 2>/dev/null ; then
+            echo_bold "Error: Invalid ICC_FASTPATH_INT specified"
+            kill -INT $$
+        fi
+        ip link set $ICC_INT up
+        ip link set ${ICC_INT}ovs up
+        # Add these rules at a low priority below the fastpath rules
+        $OFCTL add-flow $RFDP priority=3000,in_port=$icc_port,action=output:$icc_fp_port
+        $OFCTL add-flow $RFDP priority=3000,in_port=$icc_fp_port,action=output:$icc_port
+    fi
 
     echo_bold "-> Setting up $RFDP"
     # Run the fastpath code to create rules on dp0
