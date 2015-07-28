@@ -257,6 +257,11 @@ reset() {
 reset 1
 trap "reset 0; exit 0" INT
 
+# Get the dp0 OpenFlow port of a named interface
+get_dp0_port() {
+    echo `$OFCTL dump-ports-desc $RFDP | grep $1 | cut -d '(' -f 1 | xargs`
+}
+
 if [ "$ACTION" != "RESET" ]; then
     if [ -f "$HOME_RFSERVERCONFIG" ] && [ -f "$HOME_RFSERVERINTERNAL" ] ; then
         echo_bold "-> Using existing external config..."
@@ -320,11 +325,12 @@ if [ "$ACTION" != "RESET" ]; then
     do
         # Match the fastpath connection to the directly connected ports upon that switch
         # Add the interface
-        $VSCTL add-port $RFDP $interface
+        $VSCTL add-port $RFDP $interface -- set Interface $interface ofport_request="$dp0_port"
         # Verify that it got the correct port number
-        new_port=`$OFCTL dump-ports-desc $RFDP | grep $interface | cut -d '(' -f 1 | xargs`
+        new_port=$(get_dp0_port $interface)
         if [ "$new_port" != "$dp0_port" ]; then
-            echo_bold "!!!! WARNING PORT MAPPED INCORRECTLY $interface expected to be =$dp0_port but instead is =$new_port !!!!"
+            echo_bold "Error: fastpath mapped to wrong OF port $interface required =$dp0_port but instead is =$new_port"
+            kill -INT $$
         else
             echo_bold "Successfully added $interface as port $new_port"
         fi
