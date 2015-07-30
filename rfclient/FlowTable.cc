@@ -263,6 +263,7 @@ void FlowTable::GWResolverCb(FlowTable *ft) {
                 const string mask_str = re.netmask.toString();
                 const string gw_str = re.gateway.toString();
                 if (ft->findHost(re.gateway) == MAC_ADDR_NONE) {
+                    usleep(1000); // SOMETHINGS NOT quite right here we'll rate limit for now
                     syslog(LOG_DEBUG,
                           "Still cannot resolve gateway %s, will retry route %s/%s",
                           gw_str.c_str(), addr_str.c_str(), mask_str.c_str());
