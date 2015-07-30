@@ -681,7 +681,7 @@ boost::mutex cached_rm_mutex;
 std::map<std::string, std::vector<CachedRM *> > cached_rm;
 void FlowTable::notify_port_up(Interface &iface) {
     std::vector<CachedRM *> vec;
-    syslog(LOG_ERR, "notify_port_up %s size=%d\n", iface.name.c_str(), cached_rm[iface.name].size());
+    syslog(LOG_DEBUG, "notify_port_up %s size=%d\n", iface.name.c_str(), cached_rm[iface.name].size());
     {
         boost::lock_guard<boost::mutex> lock(cached_rm_mutex);
         cached_rm[iface.name].swap(vec);
@@ -689,7 +689,7 @@ void FlowTable::notify_port_up(Interface &iface) {
     std::vector<CachedRM *>::iterator it = vec.begin();
     for (; it != vec.end(); ++it) {
         CachedRM *item = *it;
-        syslog(LOG_ERR, "Releasing cached rm for port %s\n", iface.name.c_str());
+        syslog(LOG_INFO, "Releasing cached rm for port %s\n", iface.name.c_str());
         sendToHw(item->mod, item->addr, item->mask, iface, item->gateway);
         delete item;
     }
@@ -700,14 +700,14 @@ int FlowTable::sendToHw(RouteModType mod, const IPAddress& addr,
                          const MACAddress& gateway) {
     // TODO rules can still slip between active, because the Interface is cached from wayback
     if (!local_iface.active) {
-        syslog(LOG_ERR, "Cannot send RouteMod for down port %s\n", local_iface.name.c_str());
+        syslog(LOG_WARNING, "Cannot send RouteMod for down port %s\n", local_iface.name.c_str());
         CachedRM *rm = new CachedRM(mod, addr, mask, gateway);
         boost::lock_guard<boost::mutex> lock(cached_rm_mutex);
         cached_rm[local_iface.name].push_back(rm);
-        syslog(LOG_ERR, "Added RouteMod %s %s %s to the cache for down port %s\n", addr.toString().c_str(), mask.toString().c_str(), gateway.toString().c_str(), local_iface.name.c_str());
+        syslog(LOG_WARNING, "Added RouteMod %s %s %s to the cache for down port %s\n", addr.toString().c_str(), mask.toString().c_str(), gateway.toString().c_str(), local_iface.name.c_str());
         return -1;
     }
-    syslog(LOG_ERR, "Successfully adding routemod %s %s %s to port %s\n", addr.toString().c_str(), mask.toString().c_str(), gateway.toString().c_str(), local_iface.name.c_str());
+    syslog(LOG_DEBUG, "Successfully adding routemod %s %s %s to port %s\n", addr.toString().c_str(), mask.toString().c_str(), gateway.toString().c_str(), local_iface.name.c_str());
 
     RouteMod rm;
 
