@@ -258,7 +258,9 @@ void RFClient::sendAllInterfaceToControllerRouteMods(uint32_t vm_port) {
         Interface &iface = it->second;
         if (iface.port == vm_port) {
             iface.active = true;
+            syslog(LOG_ERR, "Port now active %s\n", iface.name.c_str());
             sendInterfaceToControllerRouteMods(iface);
+            this->flowTable->notify_port_up(iface);
         }
     }
 }

@@ -53,6 +53,18 @@ enum {
 #define NUD_VALID (NUD_PERMANENT|NUD_NOARP|NUD_REACHABLE|NUD_PROBE|NUD_STALE|NUD_DELAY)
 #endif
 
+
+class CachedRM {
+public:
+	RouteModType mod;
+	IPAddress addr;
+	IPAddress mask;
+	MACAddress gateway;
+	CachedRM(const RouteModType &mod, const IPAddress &addr, const IPAddress &mask, const MACAddress &gateway)
+	        : mod(mod), addr(addr), mask(mask), gateway(gateway)
+	{}
+};
+
 class FlowTable {
     public:
         FlowTable(uint64_t vm_id,
@@ -73,6 +85,7 @@ class FlowTable {
         void updateHostTable(struct rtnl_neigh *neigh, int action);
         void updateRouteTable(struct rtnl_route *route, int action);
         uint64_t get_vm_id();
+        void notify_port_up(Interface &iface);
 
     private:
         RouteSource source;
