@@ -534,8 +534,6 @@ int FlowTable::initiateND(const char *hostAddr) {
         store.ss_family = AF_INET;
     } else if (inet_pton(AF_INET6, hostAddr, &sin6->sin6_addr) == 1) {
         store.ss_family = AF_INET6;
-        syslog(LOG_ERR, "Refusing to initiateND() for IPv6: %s\n", hostAddr);
-        return -1;
     } else {
         syslog(LOG_ERR, "Invalid address family for IP \"%s\". Refusing to "
                "initiateND().\n", hostAddr);
