@@ -6,7 +6,17 @@ OVS_BRANCH="origin/master"
 
 OVS_COMMON="linux-headers-generic"
 OVS_BUILD_DEPS="dh-autoreconf pkg-config"
-OVS_BINARY="openvswitch-switch openvswitch-datapath-source module-assistant"
+OVS_BINARY="openvswitch-switch"
+OVS_KERNEL="openvswitch-datapath-source module-assistant"
+
+verlte() {
+    local result=`echo "$1 < $2" | bc`
+    [ "$result" = "1" ]
+}
+
+verlt() {
+    [ "$1" = "$2" ] && return 1 || verlte $1 $2
+}
 
 install_ovs() {
     print_status "Installing Open vSwitch"
@@ -68,9 +78,15 @@ build_ovs() {
 get_ovs() {
     pkg_install "$OVS_COMMON"
     if [ "$1" = "deb" ]; then
-        pkg_install "$OVS_BINARY"
-        $SUPER module-assistant prepare
-        $SUPER module-assistant auto-install openvswitch-datapath
+        version=`lsb_release -a 2>/dev/null | grep "Release" | cut -f2`
+        if (verlt $version "12.04"); then
+            pkg_install "$OVS_BINARY $OVS_KERNEL"
+            $SUPER module-assistant prepare
+            $SUPER module-assistant auto-install openvswitch-datapath
+        else
+            # with newer ubuntu we can just use in-tree OVS kernel module
+            pkg_install "$OVS_BINARY"
+        fi
     else
         pkg_install "$OVS_BUILD_DEPS"
         build_ovs $@
