@@ -82,6 +82,11 @@ check_local_br_up() {
 }
 
 start_ovs() {
+	if [ -f /etc/init.d/openvswitch-switch ] ; then
+		# openvswitch isn't managed by us
+		return
+	fi
+
 	if [ ! -f /usr/local/etc/openvswitch/conf.db ] ; then
 		ovsdb-tool create /usr/local/etc/openvswitch/conf.db /usr/local/share/openvswitch/vswitch.ovsschema
 	fi
