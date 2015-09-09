@@ -93,7 +93,11 @@ FlowTable::FlowTable(const FlowTable& other) {
 void FlowTable::operator()() {
     switch (this->source) {
         case RS_NETLINK: {
-            initNLListener();
+            try {
+                initNLListener();
+            } catch (int e) {
+                syslog(LOG_CRIT, "Exception in initNLListener()");
+            }
             break;
         }
         default: {
@@ -126,34 +130,48 @@ void FlowTable::initNLListener() {
 
     err = nl_cache_mngr_alloc(sock, NETLINK_ROUTE, 0, &mngr);
     if (err < 0) {
-        throw "some kind of problem with the route cache manager!";
+        syslog(LOG_CRIT,
+                "%s: %s", "nl_cache_mngr_alloc()", nl_geterror(err));
+        throw -1;
     }
 
     err = rtnl_route_alloc_cache(sock, AF_UNSPEC, 0, &rt_cache);
     if (err < 0) {
-        throw "some kind of problem with the route cache!";
+        syslog(LOG_CRIT,
+                "%s: %s", "rtnl_route_alloc_cache()", nl_geterror(err));
+        throw -1;
     }
     err = nl_cache_mngr_add_cache(mngr, rt_cache, &RTChangeCb, this);
     if (err < 0) {
-        throw "some kind of problem with adding route cache!";
+        syslog(LOG_CRIT,
+                "%s: %s", "nl_cache_mngr_add_cache()", nl_geterror(err));
+        throw -1;
     }
 
     err = rtnl_neigh_alloc_cache(sock, &ht_cache);
     if (err < 0) {
-        throw "some kind of problem with the neigh cache!";
+        syslog(LOG_CRIT,
+                "%s: %s", "rtnl_neigh_alloc_cache()", nl_geterror(err));
+        throw -1;
     }
     err = nl_cache_mngr_add_cache(mngr, ht_cache, &HTChangeCb, this);
     if (err < 0) {
-        throw "some kind of problem with adding neigh cache!";
+        syslog(LOG_CRIT,
+                "%s: %s", "nl_cache_mngr_add_cache()", nl_geterror(err));
+        throw -1;
     }
 
     err = rtnl_link_alloc_cache(sock, AF_UNSPEC, &link_cache);
     if (err < 0) {
-        throw "some kind of problem with the route cache!";
+        syslog(LOG_CRIT,
+                "%s: %s", "rtnl_link_alloc_cache()", nl_geterror(err));
+        throw -1;
     }
     err = nl_cache_mngr_add_cache(mngr, link_cache, NULL, NULL);
     if (err < 0) {
-        throw "some kind of problem with adding the link cache!";
+        syslog(LOG_CRIT,
+                "%s: %s", "nl_cache_mngr_add_cache()", nl_geterror(err));
+        throw -1;
     }
 
     nl_cache_foreach(ht_cache, &HTIterCb, this);
@@ -171,7 +189,10 @@ void FlowTable::NLListenCb(FlowTable *ft) {
     while (1) {
         status = nl_cache_mngr_poll(ft->mngr, 500);
         if (status < 0) {
-            throw "Error polling for new netlink messages";
+            syslog(LOG_CRIT,
+                    "%s: %s", "nl_cache_mngr_poll()", nl_geterror(status));
+            // TODO: What is the best thing to do here, sleep()?
+            sleep(1);
         }
     }
 }
